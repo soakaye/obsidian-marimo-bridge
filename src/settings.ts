@@ -127,16 +127,18 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 			.setDesc(
 				SETTING_MARIMO_PATH_DESC.replace("{marimoExample}", marimoExample)
 			)
-			.addText((text) =>
+			.addText((text) => {
 				text
 					.setPlaceholder(PLACEHOLDER_AUTO_DETECT)
-					.setValue(this.plugin.settings.marimoPath)
-					.onChange(async (value) => {
-						this.plugin.settings.marimoPath = value.trim();
+					.setValue(this.plugin.settings.marimoPath);
+				text.inputEl.addEventListener("blur", () => {
+					void (async () => {
+						this.plugin.settings.marimoPath = text.getValue().trim();
 						await this.plugin.saveSettings();
 						void refreshInstallStatus();
-					})
-			);
+					})();
+				});
+			});
 
 		// 2. Python interpreter path
 		new Setting(containerEl)
@@ -144,16 +146,18 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 			.setDesc(
 				SETTING_PYTHON_PATH_DESC.replace("{pythonExample}", pythonExample)
 			)
-			.addText((text) =>
+			.addText((text) => {
 				text
 					.setPlaceholder(PLACEHOLDER_AUTO_DETECT)
-					.setValue(this.plugin.settings.pythonPath)
-					.onChange(async (value) => {
-						this.plugin.settings.pythonPath = value.trim();
+					.setValue(this.plugin.settings.pythonPath);
+				text.inputEl.addEventListener("blur", () => {
+					void (async () => {
+						this.plugin.settings.pythonPath = text.getValue().trim();
 						await this.plugin.saveSettings();
 						void refreshInstallStatus();
-					})
-			);
+					})();
+				});
+			});
 
 		// 3. marimo installation status / installer
 		const installSetting = new Setting(containerEl)
@@ -201,29 +205,36 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName(SETTING_PORT_NAME)
 			.setDesc(SETTING_PORT_DESC)
-			.addText((text) =>
+			.addText((text) => {
 				text
-					.setValue(String(this.plugin.settings.port))
-					.onChange(async (value) => {
+					.setValue(String(this.plugin.settings.port));
+				text.inputEl.addEventListener("blur", () => {
+					void (async () => {
+						const value = text.getValue();
 						const n = parseInt(value, 10);
 						if (!isNaN(n) && n > 0 && n < 65536) {
 							this.plugin.settings.port = n;
 							await this.plugin.saveSettings();
+						} else {
+							text.setValue(String(this.plugin.settings.port));
 						}
-					})
-			);
+					})();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName(SETTING_HOST_NAME)
 			.setDesc(SETTING_HOST_DESC)
-			.addText((text) =>
+			.addText((text) => {
 				text
-					.setValue(this.plugin.settings.host)
-					.onChange(async (value) => {
-						this.plugin.settings.host = value.trim() || DEFAULT_HOST;
+					.setValue(this.plugin.settings.host);
+				text.inputEl.addEventListener("blur", () => {
+					void (async () => {
+						this.plugin.settings.host = text.getValue().trim() || DEFAULT_HOST;
 						await this.plugin.saveSettings();
-					})
-			);
+					})();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName(SETTING_AUTO_START_NAME)
@@ -239,17 +250,22 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName(SETTING_TIMEOUT_NAME)
-			.addText((text) =>
+			.addText((text) => {
 				text
-					.setValue(String(this.plugin.settings.startupTimeout))
-					.onChange(async (value) => {
+					.setValue(String(this.plugin.settings.startupTimeout));
+				text.inputEl.addEventListener("blur", () => {
+					void (async () => {
+						const value = text.getValue();
 						const n = parseInt(value, 10);
 						if (!isNaN(n) && n > 0) {
 							this.plugin.settings.startupTimeout = n;
 							await this.plugin.saveSettings();
+						} else {
+							text.setValue(String(this.plugin.settings.startupTimeout));
 						}
-					})
-			);
+					})();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName(SETTING_TAKEOVER_NAME)
@@ -281,17 +297,22 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName(SETTING_EMBED_HEIGHT_NAME)
-			.addText((text) =>
+			.addText((text) => {
 				text
-					.setValue(String(this.plugin.settings.defaultEmbedHeight))
-					.onChange(async (value) => {
+					.setValue(String(this.plugin.settings.defaultEmbedHeight));
+				text.inputEl.addEventListener("blur", () => {
+					void (async () => {
+						const value = text.getValue();
 						const n = parseInt(value, 10);
 						if (!isNaN(n) && n > 0) {
 							this.plugin.settings.defaultEmbedHeight = n;
 							await this.plugin.saveSettings();
+						} else {
+							text.setValue(String(this.plugin.settings.defaultEmbedHeight));
 						}
-					})
-			);
+					})();
+				});
+			});
 
 
 		new Setting(containerEl)
@@ -309,14 +330,16 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName(SETTING_API_TOKEN_NAME)
 			.setDesc(SETTING_API_TOKEN_DESC)
-			.addText((text) =>
+			.addText((text) => {
 				text
 					.setPlaceholder(SETTING_API_TOKEN_WARN)
-					.setValue(this.plugin.settings.apiToken)
-					.onChange(async (value) => {
-						this.plugin.settings.apiToken = value.trim();
+					.setValue(this.plugin.settings.apiToken);
+				text.inputEl.addEventListener("blur", () => {
+					void (async () => {
+						this.plugin.settings.apiToken = text.getValue().trim();
 						await this.plugin.saveSettings();
-					})
-			);
+					})();
+				});
+			});
 	}
 }

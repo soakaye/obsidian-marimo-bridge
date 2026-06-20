@@ -82,6 +82,8 @@ export class ServerManager {
 	private edit: ManagedServer | null = null;
 	/** Map of vault-relative notebook path → its dedicated "run" server. */
 	private runServers = new Map<string, ManagedServer>();
+	/** Map of vault-relative notebook path → number of active embeds. */
+	private runServerRefs = new Map<string, number>();
 	/** Next candidate port for a "run" server (incremented as ports are taken). */
 	private nextRunPort: number;
 	/** Cached marimo availability; `null` means "not checked yet". */
@@ -564,6 +566,8 @@ export class ServerManager {
 
 		const existing = this.runServers.get(notebook.key);
 		if (existing?.ready) {
+			const refs = this.runServerRefs.get(notebook.key) ?? 0;
+			this.runServerRefs.set(notebook.key, refs + 1);
 			return this.runServerUrl(existing.port);
 		}
 		// Dedupe concurrent callers (e.g. two `mode: run` embeds of the same file
@@ -598,6 +602,8 @@ export class ServerManager {
 					this.killProcess(proc);
 					return null;
 				}
+				const refs = this.runServerRefs.get(notebook.key) ?? 0;
+				this.runServerRefs.set(notebook.key, refs + 1);
 				return this.runServerUrl(port);
 			} finally {
 				this.runSpawning.delete(notebook.key);
@@ -821,6 +827,7 @@ export class ServerManager {
 			this.killProcess(s.process);
 		}
 		this.runServers.clear();
+		this.runServerRefs.clear();
 	}
 
 	/**
@@ -843,6 +850,7 @@ export class ServerManager {
 		}
 		this.edit = null;
 		this.runServers.clear();
+		this.runServerRefs.clear();
 	}
 
 	/**
@@ -865,30 +873,52 @@ export class ServerManager {
 	 */
 	private async runReconcile(): Promise<void> {
 		const records: SpawnedServerRecord[] = this.records.load();
-		const remaining: SpawnedServerRecord[] = [];
-		for (const r of records) {
-			// Three independent confirmations, all required before we kill:
-			//   1. the recorded PID is still alive,
-			//   2. that SAME PID is the one currently LISTENing on the recorded
-			//      port (guards against a recycled PID that now belongs to an
-			//      unrelated process while some other marimo holds the port), and
-			//   3. the server on the port accepts its persisted spawn token.
-			// Anything we cannot positively confirm is left untouched (FR-007a/
-			// FR-009).
-			const ours =
-				this.isProcessAlive(r.pid) &&
-				(await this.findPidsOnPort(r.port)).includes(r.pid) &&
-				(await this.confirmOurServer(r.port, r.token));
-			if (ours) {
-				this.killByPid(r.pid, false);
-				console.warn(
-					`[MarimoBridge] Reconciled orphaned marimo server from a prior session (pid ${r.pid.toString()}, :${r.port.toString()}).`
-				);
-				await this.waitForProcessExit(r.pid);
-				if (this.isProcessAlive(r.pid)) remaining.push(r);
-			}
-		}
+		const results = await Promise.all(
+			records.map(async (r) => {
+				// Three independent confirmations, all required before we kill:
+				//   1. the recorded PID is still alive,
+				//   2. that SAME PID is the one currently LISTENing on the recorded
+				//      port (guards against a recycled PID that now belongs to an
+				//      unrelated process while some other marimo holds the port), and
+				//   3. the server on the port accepts its persisted spawn token.
+				// Anything we cannot positively confirm is left untouched (FR-007a/
+				// FR-009).
+				const ours =
+					this.isProcessAlive(r.pid) &&
+					(await this.findPidsOnPort(r.port)).includes(r.pid) &&
+					(await this.confirmOurServer(r.port, r.token));
+				if (ours) {
+					this.killByPid(r.pid, false);
+					console.warn(
+						`[MarimoBridge] Reconciled orphaned marimo server from a prior session (pid ${r.pid.toString()}, :${r.port.toString()}).`
+					);
+					await this.waitForProcessExit(r.pid);
+					if (this.isProcessAlive(r.pid)) {
+						return r;
+					}
+				}
+				return null;
+			})
+		);
+		const remaining = results.filter((r): r is SpawnedServerRecord => r !== null);
 		this.records.replaceAll(remaining);
+	}
+
+	/** Decrement the reference count for a run server, terminating it if it is no longer referenced. */
+	async releaseRunServer(vaultRelativePath: string): Promise<void> {
+		const notebook = resolveVaultNotebook(this.vaultPath, vaultRelativePath);
+		if (!notebook) return;
+		const refs = this.runServerRefs.get(notebook.key) ?? 0;
+		if (refs <= 1) {
+			this.runServerRefs.delete(notebook.key);
+			const server = this.runServers.get(notebook.key);
+			if (server) {
+				this.killProcess(server.process);
+				this.runServers.delete(notebook.key);
+			}
+		} else {
+			this.runServerRefs.set(notebook.key, refs - 1);
+		}
 	}
 
 	/** Wait briefly for a termination request to take effect. */

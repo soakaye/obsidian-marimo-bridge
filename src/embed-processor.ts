@@ -13,7 +13,7 @@
  * - `mode: edit` (default) points at the always-on edit server (full editor).
  * - `mode: run` lazily starts a per-notebook read-only "app" server.
  */
-import { MarkdownPostProcessorContext } from "obsidian";
+import { MarkdownPostProcessorContext, MarkdownRenderChild } from "obsidian";
 import type MarimoBridgePlugin from "./main";
 import { createMarimoWebview } from "./editor-view";
 import {
@@ -51,6 +51,73 @@ interface EmbedConfig {
 }
 
 /**
+ * A render child that encapsulates the embedded webview's DOM element
+ * and handles starting/stopping the dedicated marimo run server on unload.
+ */
+class MarimoEmbedChild extends MarkdownRenderChild {
+	private plugin: MarimoBridgePlugin;
+	private file: string;
+	private mode: typeof MODE_EDIT | typeof MODE_RUN;
+	private height: number;
+	private wrapper: HTMLDivElement;
+
+	constructor(
+		containerEl: HTMLElement,
+		plugin: MarimoBridgePlugin,
+		file: string,
+		mode: typeof MODE_EDIT | typeof MODE_RUN,
+		height: number
+	) {
+		super(containerEl);
+		this.plugin = plugin;
+		this.file = file;
+		this.mode = mode;
+		this.height = height;
+		this.wrapper = containerEl.createDiv({ cls: CLS_EMBED });
+	}
+
+	onload(): void {
+		const loading = this.wrapper.createDiv({
+			cls: CLS_LOADING,
+			text: TEXT_STARTING,
+		});
+
+		void (async () => {
+			// Every embed needs at least the edit server (run mode also reuses it
+			// for availability checks / fast failure).
+			const ok = await this.plugin.servers.ensureEditServer();
+			if (!ok) {
+				loading.setText(TEXT_SERVER_UNAVAILABLE);
+				return;
+			}
+
+			let url: string | null;
+			if (this.mode === MODE_RUN) {
+				url = await this.plugin.servers.ensureRunServer(this.file);
+				if (!url) {
+					loading.setText(`${TEXT_RUN_SERVER_ERROR_PREFIX}${this.file}${CHAR_DOT}`);
+					return;
+				}
+			} else {
+				url = this.plugin.servers.editFileUrl(this.file);
+			}
+
+			const partitionName = `${PARTITION_PREFIX}shared`;
+
+			loading.remove();
+			createMarimoWebview(this.plugin, this.wrapper, url, partitionName, undefined, this.height);
+		})();
+	}
+
+	onunload(): void {
+		if (this.mode === MODE_RUN) {
+			void this.plugin.servers.releaseRunServer(this.file);
+		}
+		this.wrapper.empty();
+	}
+}
+
+/**
  * Build the markdown code-block processor. Returns an async handler suitable
  * for `registerMarkdownCodeBlockProcessor("marimo", ...)`.
  */
@@ -58,7 +125,7 @@ export function createMarimoEmbedProcessor(plugin: MarimoBridgePlugin) {
 	return async (
 		source: string,
 		el: HTMLElement,
-		_ctx: MarkdownPostProcessorContext
+		ctx: MarkdownPostProcessorContext
 	): Promise<void> => {
 		const cfg = parseEmbedConfig(source, plugin);
 
@@ -70,35 +137,8 @@ export function createMarimoEmbedProcessor(plugin: MarimoBridgePlugin) {
 			return;
 		}
 
-		const wrapper = el.createDiv({ cls: CLS_EMBED });
-		const loading = wrapper.createDiv({
-			cls: CLS_LOADING,
-			text: TEXT_STARTING,
-		});
-
-		// Every embed needs at least the edit server (run mode also reuses it
-		// for availability checks / fast failure).
-		const ok = await plugin.servers.ensureEditServer();
-		if (!ok) {
-			loading.setText(TEXT_SERVER_UNAVAILABLE);
-			return;
-		}
-
-		let url: string | null;
-		if (cfg.mode === MODE_RUN) {
-			url = await plugin.servers.ensureRunServer(cfg.file);
-			if (!url) {
-				loading.setText(`${TEXT_RUN_SERVER_ERROR_PREFIX}${cfg.file}${CHAR_DOT}`);
-				return;
-			}
-		} else {
-			url = plugin.servers.editFileUrl(cfg.file);
-		}
-
-		const partitionName = `${PARTITION_PREFIX}shared`;
-
-		loading.remove();
-		createMarimoWebview(plugin, wrapper, url, partitionName, undefined, cfg.height);
+		const child = new MarimoEmbedChild(el, plugin, cfg.file, cfg.mode, cfg.height);
+		ctx.addChild(child);
 	};
 }
 

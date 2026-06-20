@@ -286,8 +286,12 @@ export function createMarimoWebview(
 					}
 				}
 			} else {
-				// US3: External link - open in default browser
-				await shell.openExternal(parsed.href);
+				// US3: External link - open in default browser (restrict to http/https)
+				if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+					await shell.openExternal(parsed.href);
+				} else {
+					console.warn("[MarimoBridge] Blocked external navigation to unsafe protocol:", parsed.protocol);
+				}
 			}
 		} catch (e) {
 			console.error("Failed to parse link URL:", e);
