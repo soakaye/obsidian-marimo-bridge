@@ -1,0 +1,49 @@
+import assert from "node:assert/strict";
+import {
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
+import test from "node:test";
+import { ServerRecordStore } from "../src/server-records";
+
+test("drops legacy records that do not contain an ownership token", () => {
+	const dir = mkdtempSync(path.join(tmpdir(), "marimo-records-"));
+	const file = path.join(dir, "records.json");
+	try {
+		writeFileSync(
+			file,
+			JSON.stringify({
+				records: [{ pid: 1234, port: 2718, kind: "edit" }],
+			})
+		);
+
+		const store = new ServerRecordStore(file);
+
+		assert.deepEqual(store.load(), []);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("loads records with a non-empty ownership token", () => {
+	const dir = mkdtempSync(path.join(tmpdir(), "marimo-records-"));
+	const file = path.join(dir, "records.json");
+	try {
+		const record = {
+			pid: 1234,
+			port: 2718,
+			kind: "edit",
+			token: "session-token",
+		};
+		writeFileSync(file, JSON.stringify({ records: [record] }));
+
+		const store = new ServerRecordStore(file);
+
+		assert.deepEqual(store.load(), [record]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

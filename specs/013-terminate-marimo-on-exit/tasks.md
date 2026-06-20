@@ -9,7 +9,7 @@ description: "Task list for Terminate Self-Spawned marimo Servers on Obsidian Ex
 
 **Prerequisites**: [plan.md](./plan.md), [spec.md](./spec.md), [research.md](./research.md), [data-model.md](./data-model.md), [contracts/server-records.md](./contracts/server-records.md), [quickstart.md](./quickstart.md)
 
-**Tests**: No automated test framework exists in this repo (scripts: `dev`, `build`, `lint`) and the spec did not request TDD. Validation is `npm run build` + `npm run lint` + the manual scenarios in [quickstart.md](./quickstart.md). No test tasks are generated.
+**Tests**: The repository now includes a Node built-in regression suite invoked with `npm test`, in addition to `npm run build`, `npm run lint`, and the manual scenarios in [quickstart.md](./quickstart.md).
 
 **Organization**: Tasks are grouped by user story. US1 (P1) is the MVP. US2 (P2) hardens the shared cleanup code with the conservative-safety guarantees.
 
@@ -39,7 +39,7 @@ Single-project Obsidian plugin: source under `src/` at repository root. Constitu
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [X] T002 [P] Create `src/server-records.ts` implementing the spawned-server record store per [contracts/server-records.md](./contracts/server-records.md) and [data-model.md](./data-model.md): synchronous `load()`, `add(record)`, `remove(pid)`, `list()`, `replaceAll(records)` using `fs.readFileSync`/`fs.writeFileSync`; tolerant load (missing/empty/malformed file → empty store, no error); validate `pid>0` and `port` in range; `SpawnedServerRecord = { pid, port, kind }`.
+- [X] T002 [P] Create `src/server-records.ts` implementing the spawned-server record store per [contracts/server-records.md](./contracts/server-records.md) and [data-model.md](./data-model.md): synchronous `load()`, `add(record)`, `remove(pid)`, `list()`, `replaceAll(records)` using `fs.readFileSync`/`fs.writeFileSync`; tolerant load (missing/empty/malformed file → empty store, no error); validate PID, port, kind, and non-empty spawn token.
 - [X] T003 Resolve the records file path and inject the store into `ServerManager`: compute the plugin-directory path (separate from `data.json`) in `src/main.ts` and pass it into the `ServerManager` constructor in `src/server-manager.ts`; instantiate the record store there.
 - [X] T004 Refactor termination into a PID-capable helper in `src/server-manager.ts`: extend/extract `killProcess` so it can terminate from a bare `pid` as well as a `ChildProcess` — Unix: `process.kill(-pid, SIGTERM)` (detached process group) with `proc.kill()` fallback; Windows: `taskkill /PID <pid> /T /F` (recursive tree). Single graceful signal, no escalation/wait (FR-004, FR-010, FR-011).
 
@@ -55,11 +55,11 @@ Single-project Obsidian plugin: source under `src/` at repository root. Constitu
 
 ### Implementation for User Story 1
 
-- [X] T005 [US1] Record on spawn in `src/server-manager.ts`: in `spawnServer`, after `spawn` returns and `proc.pid` is known, call `store.add({ pid, port, kind })` BEFORE `waitForReady` so a server is never running without a record (FR-007). Covers mid-startup case (FR-006).
-- [X] T006 [US1] Unrecord on clean kill in `src/server-manager.ts`: call `store.remove(pid)` wherever a spawned process is terminated — `stopEditServer`, `restartEditServer`, the failed-`ensureRunServer` cleanup, and per-server inside `stopAll` (FR-007).
-- [X] T007 [US1] Add `stopAllSync()` to `src/server-manager.ts`: synchronously terminate every spawned edit + run server via the T004 PID helper, with NO awaits (use `execSync`/`spawnSync` for Windows `taskkill`); prune records where possible (FR-001, FR-003, FR-011).
+- [X] T005 [US1] Record on spawn in `src/server-manager.ts`: in `spawnServer`, after `spawn` returns and `proc.pid` is known, call `store.add({ pid, port, kind, token })` BEFORE `waitForReady` so a server is never running without an ownership record (FR-007). Covers mid-startup case (FR-006).
+- [X] T006 [US1] Unrecord on confirmed exit in `src/server-manager.ts`: attach an idempotent `exit`/`close` finalizer that removes the record and clears matching managed state. Signal requests retain the record until confirmation (FR-007).
+- [X] T007 [US1] Add `stopAllSync()` to `src/server-manager.ts`: synchronously terminate every spawned edit + run server via the T004 PID helper, with NO awaits (use `execSync`/`spawnSync` for Windows `taskkill`); retain records for next-launch confirmation (FR-001, FR-003, FR-011).
 - [X] T008 [US1] Register exit handlers in `src/main.ts` `onload`: add a `window` `unload`/`beforeunload` listener that calls `this.servers.stopAllSync()` (registered for teardown), and keep `onunload()` → `this.servers.stopAll()` for plugin disable/reload (FR-001, FR-002).
-- [X] T009 [US1] Implement `reconcileOrphans()` in `src/server-manager.ts` per [contracts/server-records.md](./contracts/server-records.md) §4: for each loaded record, confirm liveness via `process.kill(pid, SIGNAL_PROBE)` AND identity via the existing `serverAcceptsOurAuth(port)` (bounded by `RECONCILE_CONFIRM_TIMEOUT_MS`); terminate confirmed orphans with the T004 helper; then `store.replaceAll(remaining)` (FR-007a).
+- [X] T009 [US1] Implement `reconcileOrphans()` in `src/server-manager.ts` per [contracts/server-records.md](./contracts/server-records.md) §4: for each loaded record, confirm liveness via `process.kill(pid, SIGNAL_PROBE)`, confirm the PID owns the recorded listening port, and verify `serverAcceptsOurAuth(port, token)` (bounded by `RECONCILE_CONFIRM_TIMEOUT_MS`); signal confirmed orphans, retain records for survivors, and persist the remaining set (FR-007a).
 - [X] T010 [US1] Call `reconcileOrphans()` during `src/main.ts` `onload` before/around `ensureEditServer` (after the `ServerManager` is constructed) so orphans from a prior session are cleared at startup (FR-007a).
 - [X] T011 [US1] Verify no-op safety paths in `src/server-records.ts` and `src/server-manager.ts`: `stopAll`, `stopAllSync`, and `reconcileOrphans` complete cleanly when the store is empty / no servers were started, surfacing no error to the user (FR-008).
 

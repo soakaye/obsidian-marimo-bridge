@@ -9,6 +9,7 @@
  */
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import type MarimoBridgePlugin from "./main";
+import { getFilePathFromUrl } from "./url-utils";
 import {
 	VIEW_TYPE_MARIMO,
 	ICON_MARIMO_LOGO,
@@ -40,7 +41,6 @@ import {
 	PROTOCOL_HTTPS,
 	HOST_LOCALHOST,
 	HOST_LOOPBACK,
-	QUERY_FILE_KEY,
 	ACCESS_TOKEN_KEY,
 	AUTH_RETRY_MAX,
 	PATH_AUTH_LOGIN,
@@ -225,12 +225,7 @@ export function createMarimoWebview(
 	}
 
 	let initialFilePath: string | null = null;
-	try {
-		const parsedInit = new URL(url);
-		initialFilePath = parsedInit.searchParams.get(QUERY_FILE_KEY);
-	} catch {
-		// Ignore URL parsing errors
-	}
+	initialFilePath = getFilePathFromUrl(url);
 
 	// Check if a URL should be intercepted by the plugin
 	const shouldIntercept = (targetUrl: string): boolean => {
@@ -250,10 +245,9 @@ export function createMarimoWebview(
 
 			const isLocal = parsed.hostname === HOST_LOOPBACK || parsed.hostname === HOST_LOCALHOST;
 			if (isLocal) {
-				const filePath = parsed.searchParams.get(QUERY_FILE_KEY);
+				const filePath = getFilePathFromUrl(parsed.href);
 				if (filePath) {
-					const decodedPath = decodeURIComponent(filePath);
-					if (initialFilePath && decodedPath === decodeURIComponent(initialFilePath)) {
+					if (initialFilePath && filePath === initialFilePath) {
 						return false;
 					}
 					return true;
@@ -277,19 +271,18 @@ export function createMarimoWebview(
 			// Check if it's pointing to the local marimo server
 			const isLocal = parsed.hostname === HOST_LOOPBACK || parsed.hostname === HOST_LOCALHOST;
 			if (isLocal) {
-				let filePath = parsed.searchParams.get(QUERY_FILE_KEY);
+				let filePath = getFilePathFromUrl(parsed.href);
 				if (!filePath && (parsed.pathname === PATH_NEW || parsed.pathname.startsWith(PATH_NEW_SLASH))) {
 					filePath = FILE_NEW;
 				}
 				if (filePath) {
-					const decodedPath = decodeURIComponent(filePath);
 					const active = disposition !== DISPOSITION_BG_TAB;
-					const isMarimo = decodedPath.endsWith(EXT_PY) || decodedPath.startsWith(FILE_NEW);
+					const isMarimo = filePath.endsWith(EXT_PY) || filePath.startsWith(FILE_NEW);
 					if (isMarimo) {
-						await plugin.openMarimo(decodedPath, true, active);
+						await plugin.openMarimo(filePath, true, active);
 					} else {
 						// US2: Non-marimo local workspace file
-						await plugin.app.workspace.openLinkText(decodedPath, "", LEAF_TAB, { active });
+						await plugin.app.workspace.openLinkText(filePath, "", LEAF_TAB, { active });
 					}
 				}
 			} else {
@@ -412,10 +405,9 @@ export function createMarimoWebview(
 
 			const isLocal = parsed.hostname === HOST_LOOPBACK || parsed.hostname === HOST_LOCALHOST;
 			if (isLocal) {
-				const filePath = parsed.searchParams.get(QUERY_FILE_KEY);
+				const filePath = getFilePathFromUrl(parsed.href);
 				if (filePath && onFileChanged) {
-					const decodedPath = decodeURIComponent(filePath);
-					onFileChanged(decodedPath);
+					onFileChanged(filePath);
 				}
 			}
 		} catch (e) {

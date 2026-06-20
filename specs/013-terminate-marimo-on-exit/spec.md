@@ -37,7 +37,7 @@ A user (or another tool) is running an independent marimo server, or the plugin 
 **Acceptance Scenarios**:
 
 1. **Given** the plugin adopted a pre-existing server it did not spawn, **When** Obsidian exits or the plugin unloads, **Then** that adopted server continues running and is not terminated.
-2. **Given** the plugin spawned its own server after evicting an incompatible one, **When** Obsidian exits, **Then** the plugin's own spawned server is terminated while any unrelated processes are left untouched.
+2. **Given** an incompatible server occupies the configured port, **When** the plugin tries to start its edit server, **Then** startup stops with a port-conflict notice and the incompatible process is left untouched.
 
 ---
 
@@ -54,8 +54,8 @@ A user (or another tool) is running an independent marimo server, or the plugin 
 
 ### Session 2026-06-20
 
-- Q: How should leftover self-started servers from a crash/forced exit be identified and cleaned up on the next launch? → A: Persist each spawned server's PID and port to a plugin data file; on startup, verify each recorded entry and terminate any that is still alive and confirmable as the plugin's own marimo server.
-- Q: When next-launch cleanup finds something on a recorded port/PID but cannot positively confirm it is one the plugin started, should it skip or terminate? → A: Conservative — terminate only when positively confirmed (recorded PID still alive AND identifiable as the plugin's marimo server, e.g. accepts the active token); otherwise leave it running.
+- Q: How should leftover self-started servers from a crash/forced exit be identified and cleaned up on the next launch? → A: Persist each spawned server's PID, port, kind, and spawn token to a plugin data file; on startup, verify each recorded entry and terminate any that is still alive and confirmable as the plugin's own marimo server.
+- Q: When next-launch cleanup finds something on a recorded port/PID but cannot positively confirm it is one the plugin started, should it skip or terminate? → A: Conservative — terminate only when positively confirmed (recorded PID still owns the port AND the server accepts its persisted spawn token); otherwise leave it running.
 - Q: Graceful vs forced termination of self-started servers? → A: Graceful signal only, no forced-kill escalation or wait — send the platform's termination signal (Unix: SIGTERM to the process group; Windows: process-tree termination) and do not block to escalate; anything that does not exit in time is handled by next-launch reconciliation.
 - Q: Quantify SC-002's "within a few seconds" port-release window? → A: Keep qualitative ("within a few seconds"); no fixed numeric threshold is imposed.
 
@@ -69,8 +69,8 @@ A user (or another tool) is running an independent marimo server, or the plugin 
 - **FR-004**: Termination MUST also stop any child/worker subprocesses descended from a server the plugin started, so that no descendant survives the parent.
 - **FR-005**: The plugin MUST NOT terminate a marimo server it did not start (e.g. a pre-existing server it merely adopted/attached to).
 - **FR-006**: The plugin MUST terminate a server that is still in the process of starting (not yet reported healthy) if exit/unload occurs before startup completes.
-- **FR-007**: For each server it spawns, the plugin MUST persist a record (at minimum the process identifier, the port, and the server kind) to a plugin-owned data store, and MUST remove that record once the server is cleanly terminated.
-- **FR-007a**: On startup, the plugin MUST read the persisted records and, for each one, terminate the leftover process only when it can positively confirm the process is still alive AND is the plugin's own marimo server (e.g. the recorded process identifier is still live and the server accepts the plugin's active token). Confirmed leftovers MUST be terminated; unconfirmable records MUST be left untouched and then cleared from the store.
+- **FR-007**: For each server it spawns, the plugin MUST persist a record containing the process identifier, port, server kind, and spawn token to a plugin-owned data store, and MUST remove that record only after the process is confirmed to have exited.
+- **FR-007a**: On startup, the plugin MUST read the persisted records and, for each one, terminate the leftover process only when it can positively confirm the recorded process identifier still owns the recorded port AND the server accepts the record's spawn token. Confirmed leftovers MUST be signaled and retained in the store if they remain alive; unconfirmable records MUST be left untouched and cleared from the store.
 - **FR-008**: Cleanup actions MUST be safe to invoke when no servers were started, completing without error.
 - **FR-009**: Identification of "processes the plugin started" MUST be reliable enough that cleanup does not terminate an unrelated process that happens to occupy a previously used port. When identity cannot be positively confirmed, the plugin MUST favor leaving the process running over terminating it (conservative posture: never kill on suspicion alone).
 - **FR-010**: The cleanup mechanism MUST function on the platforms the plugin supports (Obsidian Desktop on Windows and Unix-like systems), accounting for platform differences in how process trees are terminated.
@@ -79,7 +79,7 @@ A user (or another tool) is running an independent marimo server, or the plugin 
 ### Key Entities *(include if data involved)*
 
 - **Managed Server**: A marimo server instance the plugin is responsible for. Distinguished by whether the plugin *started* it (subject to termination) or *adopted* it (left running). Characterized by its kind (edit vs. run), the port it uses, and its current readiness.
-- **Self-Started Process Record**: A persisted entry the plugin writes for each server it spawns, containing at minimum the process identifier, the port, and the server kind (edit vs. run) — sufficient to terminate that server and its descendants both during the session and, after an unclean shutdown, on the next launch. The record is removed once its server is cleanly terminated. Records are only acted upon when the referenced process can be positively confirmed as the plugin's own marimo server.
+- **Self-Started Process Record**: A persisted entry the plugin writes for each server it spawns, containing the process identifier, port, server kind (edit vs. run), and spawn token — sufficient to identify and terminate that server and its descendants both during the session and, after an unclean shutdown, on the next launch. The record is removed only after process exit is confirmed. Records are only acted upon when the referenced process can be positively confirmed as the plugin's own marimo server.
 
 ## Success Criteria *(mandatory)*
 

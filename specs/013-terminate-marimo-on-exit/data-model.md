@@ -11,9 +11,11 @@ One entry per marimo server the plugin **spawned** (never for adopted servers). 
 | `pid` | integer | yes | OS process identifier returned by `spawn`. Used for liveness probe and termination. |
 | `port` | integer | yes | Loopback port the server listens on. Used for the token-acceptance identity check during reconciliation. |
 | `kind` | `"edit" \| "run"` | yes | Server kind, for logging/diagnostics and to mirror the in-memory `ManagedServer.kind`. |
+| `token` | string | yes | Token passed to this process's `--token-password`; used to identify an orphan after a restart. |
 
 **Notes**
-- The plugin's working token is **not** stored; reconciliation uses the live active token from `getActiveToken()` against the recorded `port`.
+- The per-process token is stored because an auto-generated session token changes
+  on every Obsidian launch.
 - No timestamps are required for correctness; an optional `startedAt` may be added for diagnostics but is not load-bearing.
 
 ### Validation rules
@@ -28,9 +30,12 @@ One entry per marimo server the plugin **spawned** (never for adopted servers). 
 (spawn succeeds, pid known)
         │  writeFileSync add record
         ▼
-   [Recorded] ──────────────► (clean kill: stopAll / restart / failed-ready)
-        │                              │  writeFileSync remove record
+   [Recorded] ──────────────► (signal: stopAll / restart / failed-ready)
+        │                              │
         │                              ▼
+        │                       [Termination requested]
+        │                              │ child exit/close
+        │                              ▼  writeFileSync remove record
         │                         [Removed]
         │
         └─(crash / force-quit: no clean removal)─► [Orphan record persists]
@@ -39,7 +44,7 @@ One entry per marimo server the plugin **spawned** (never for adopted servers). 
                                                           │
                           ┌───────────────────────────────┴───────────────────────────────┐
                           │ confirm: process.kill(pid,0) live  AND                         │
-                          │          serverAcceptsOurAuth(port) true                       │
+                          │          serverAcceptsOurAuth(port, storedToken) true          │
                           ▼                                                                 ▼
                    [Confirmed]  → terminate (platform kill) → remove record       [Unconfirmed] → leave process,
                                                                                                   remove stale record

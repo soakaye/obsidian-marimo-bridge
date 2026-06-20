@@ -6,7 +6,7 @@
 
 ## Summary
 
-Guarantee that every marimo server the plugin *spawns* (the always-on edit server and each lazily-started run server) is terminated when Obsidian exits or the plugin unloads, while never touching servers the plugin merely *adopted*. Because Obsidian's `onunload` is not reliably invoked on a full application quit and Unix servers are spawned `detached` (their own process group, so they survive a parent exit), reliable cleanup cannot depend on the in-session teardown alone. The approach adds a **persisted process-record store** (PID + port + kind, written synchronously at spawn time and removed on clean termination) plus a **best-effort synchronous kill on `window` unload** and a **next-launch reconciliation** that terminates only positively-confirmed leftovers (live PID AND a marimo server that accepts the active token). This realizes Constitution Principle III and the clarified FR-007/FR-007a/FR-009.
+Guarantee that every marimo server the plugin *spawns* (the always-on edit server and each lazily-started run server) is terminated when Obsidian exits or the plugin unloads, while never touching servers the plugin merely *adopted*. Because Obsidian's `onunload` is not reliably invoked on a full application quit and Unix servers are spawned `detached` (their own process group, so they survive a parent exit), reliable cleanup cannot depend on the in-session teardown alone. The approach adds a **persisted process-record store** (PID + port + kind + spawn token, written synchronously at spawn time and removed only after confirmed exit) plus a **best-effort synchronous kill on `window` unload** and a **next-launch reconciliation** that terminates only positively-confirmed leftovers (live recorded PID owns the port AND the server accepts its persisted spawn token). This realizes Constitution Principle III and the clarified FR-007/FR-007a/FR-009.
 
 ## Technical Context
 
@@ -66,7 +66,7 @@ specs/013-terminate-marimo-on-exit/
 src/
 ├── constants.ts        # ADD: records file name, SIGNAL existence probe (0),
 │                       #      reconcile confirmation timeout, log/notice text
-├── server-manager.ts   # CHANGE: record on spawn / unrecord on clean kill;
+├── server-manager.ts   # CHANGE: record on spawn / unrecord on confirmed exit;
 │                       #         add reconcileOrphans() for next-launch cleanup;
 │                       #         add synchronous stopAllSync() for exit handler
 ├── main.ts             # CHANGE: call reconcileOrphans() during onload();

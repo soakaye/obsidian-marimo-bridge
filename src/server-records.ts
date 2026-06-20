@@ -12,7 +12,7 @@
  * See `specs/013-terminate-marimo-on-exit/contracts/server-records.md`.
  */
 import * as fs from "fs";
-import { ENCODING_UTF8 } from "./constants";
+import { ENCODING_UTF8, PORT_MAX } from "./constants";
 
 /** One persisted entry per spawned marimo server. */
 export interface SpawnedServerRecord {
@@ -22,6 +22,8 @@ export interface SpawnedServerRecord {
 	port: number;
 	/** Server kind, mirroring ServerManager's in-memory bookkeeping. */
 	kind: "edit" | "run";
+	/** Token passed to this server's `--token-password` option. */
+	token: string;
 }
 
 /** On-disk shape of the record file. */
@@ -105,7 +107,15 @@ export class ServerRecordStore {
 		const portOk =
 			typeof rec.port === "number" &&
 			Number.isInteger(rec.port) &&
-			rec.port > 0;
-		return pidOk && portOk && (rec.kind === "edit" || rec.kind === "run");
+			rec.port > 0 &&
+			rec.port <= PORT_MAX;
+		const tokenOk =
+			typeof rec.token === "string" && rec.token.trim().length > 0;
+		return (
+			pidOk &&
+			portOk &&
+			tokenOk &&
+			(rec.kind === "edit" || rec.kind === "run")
+		);
 	}
 }

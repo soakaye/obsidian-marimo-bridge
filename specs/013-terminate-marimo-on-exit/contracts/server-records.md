@@ -11,8 +11,8 @@ This plugin is an internal Obsidian application; it exposes no public API. The r
 ```json
 {
   "records": [
-    { "pid": 12345, "port": 2718, "kind": "edit" },
-    { "pid": 12346, "port": 2719, "kind": "run" }
+    { "pid": 12345, "port": 2718, "kind": "edit", "token": "..." },
+    { "pid": 12346, "port": 2719, "kind": "run", "token": "..." }
   ]
 }
 ```
@@ -21,6 +21,10 @@ This plugin is an internal Obsidian application; it exposes no public API. The r
   - `pid` (integer > 0, required)
   - `port` (integer in valid range, required)
   - `kind` (`"edit"` | `"run"`, required)
+  - `token` (non-empty string, required): the token passed to this process's
+    `--token-password` option
+- **Legacy records**: entries without `token` are unconfirmable and MUST be
+  discarded without terminating any process.
 - **Tolerance**: a missing file, empty file, or JSON that fails to parse/validate MUST be treated as `{ "records": [] }` with no user-facing error (FR-008).
 
 ## 2. Store operations (synchronous)
@@ -29,7 +33,7 @@ This plugin is an internal Obsidian application; it exposes no public API. The r
 |-----------|-------------|----------|
 | `load()` | once during `onload` (before/at server bootstrap) | Read + validate file → in-memory list; drop invalid entries. |
 | `add(record)` | immediately after a successful `spawn` yields a `pid`, before `waitForReady` | Append record (unique by `pid`) and `writeFileSync` the whole store. |
-| `remove(pid)` | immediately after a clean kill of that process (`stopAll`, `stopEditServer`, `restartEditServer`, failed `ensureRunServer`) | Drop the entry by `pid` and `writeFileSync`. |
+| `remove(pid)` | after the spawned child emits `exit` or `close` | Drop the entry by `pid` and `writeFileSync`. A signal request alone MUST NOT remove it. |
 | `list()` | during reconciliation | Return current in-memory records. |
 | `replaceAll(records)` | end of reconciliation | Persist the pruned set (only confirmed-and-still-running entries). |
 
@@ -50,10 +54,11 @@ Run during `onload`, before/around `ensureEditServer`:
 ```text
 for each record r in store.list():
     live    = isProcessAlive(r.pid)        # process.kill(pid, 0), false on ESRCH
-    ours    = live && await serverAcceptsOurAuth(r.port)   # reuse existing auth probe
+    ours    = live && await serverAcceptsOurAuth(r.port, r.token)
     if live && ours:
         terminate(r.pid)                   # §3
-        drop r                             # confirmed orphan killed
+        wait for bounded exit confirmation
+        keep r if still alive; otherwise drop r
     else:
         drop r                             # stale/unconfirmable → leave any process, prune record
 store.replaceAll(remaining-after-drops)    # = [] in the common case
@@ -66,8 +71,8 @@ store.replaceAll(remaining-after-drops)    # = [] in the common case
 
 | Trigger | Handler | Requirement |
 |---------|---------|-------------|
-| Plugin disable/reload | `onunload` → `stopAll()` | Kill every spawned edit + run server and remove each record. (FR-002, FR-003) |
-| App quit (best-effort) | `window` `unload`/`beforeunload` → `stopAllSync()` | Synchronously signal every spawned server (§3) without awaiting; records pruned where possible. Survivors handled by §4 next launch. (FR-001) |
+| Plugin disable/reload | `onunload` → `stopAll()` | Signal every spawned edit + run server. Child exit handlers remove confirmed-dead records. (FR-002, FR-003) |
+| App quit (best-effort) | `window` `unload`/`beforeunload` → `stopAllSync()` | Synchronously signal every spawned server (§3) without awaiting and retain records for next-launch confirmation. (FR-001) |
 | Restart command | `restartEditServer()` | Kill + remove record for the old edit server before spawning a new one. |
 | Adopted server | — | Never recorded, never killed by any path above. (FR-005) |
 

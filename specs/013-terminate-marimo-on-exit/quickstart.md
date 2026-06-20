@@ -65,7 +65,7 @@ Both MUST pass with no new errors.
 ## Scenario 8 — Conservative safety (FR-009)
 
 1. After a force-quit leaves a record, free the orphan but start an **unrelated** process on the same port (or let the OS reuse the PID) before relaunch.
-2. **Expected**: reconciliation does **not** kill the unrelated process — it only terminates a process that is both live by recorded PID and presents a token-accepting marimo server on the recorded port; otherwise it prunes the record and leaves the process alone.
+2. **Expected**: reconciliation does **not** kill the unrelated process — it only terminates a process when the recorded PID owns the recorded listening port and that server accepts the persisted spawn token; otherwise it prunes the record and leaves the process alone.
 
 ## References
 

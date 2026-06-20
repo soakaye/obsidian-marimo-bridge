@@ -17,6 +17,7 @@ import * as path from "path";
 import * as crypto from "crypto";
 import type { MarimoBridgeSettings } from "./settings";
 import { ServerRecordStore, type SpawnedServerRecord } from "./server-records";
+import { resolveVaultNotebook } from "./notebook-path";
 import {
 	PLATFORM_WIN32,
 	DIR_VENV,
@@ -66,6 +67,14 @@ interface ManagedServer {
 	ready: boolean;
 }
 
+interface ServerConfigSnapshot {
+	pythonPath: string;
+	marimoPath: string;
+	port: number;
+	host: string;
+	apiToken: string;
+}
+
 export class ServerManager {
 	private settings: MarimoBridgeSettings;
 	/** Absolute path to the vault root; used as the server working directory. */
@@ -81,10 +90,12 @@ export class ServerManager {
 	private editSpawning: Promise<boolean> | null = null;
 	/** In-flight `run` spawns keyed by notebook path; dedupes concurrent embeds. */
 	private runSpawning = new Map<string, Promise<string | null>>();
-	/** Crash-recovery store of servers we spawned (PID/port/kind). */
+	/** Crash-recovery store of servers we spawned (PID/port/kind/token). */
 	private records: ServerRecordStore;
 	/** Set once {@link reconcileOrphans} starts; `ensure*` await it before spawning. */
 	private reconcilePromise: Promise<void> | null = null;
+	/** Process-affecting settings used by the currently managed servers. */
+	private serverConfig: ServerConfigSnapshot;
 
 	constructor(
 		adapter: FileSystemAdapter,
@@ -95,6 +106,7 @@ export class ServerManager {
 		this.vaultPath = adapter.getBasePath();
 		this.nextRunPort = settings.port + 1;
 		this.records = new ServerRecordStore(recordsPath);
+		this.serverConfig = this.captureServerConfig();
 	}
 
 	/** Gets the active token, generating a session token dynamically if custom token is empty. */
@@ -264,6 +276,14 @@ export class ServerManager {
 	 */
 	invalidateAvailability(): void {
 		this.available = null;
+		const nextConfig = this.captureServerConfig();
+		if (!sameServerConfig(this.serverConfig, nextConfig)) {
+			const tokenChanged = this.serverConfig.apiToken !== nextConfig.apiToken;
+			this.stopAll();
+			this.nextRunPort = nextConfig.port + 1;
+			if (tokenChanged) this.sessionToken = null;
+			this.serverConfig = nextConfig;
+		}
 	}
 
 	/** Cached check for whether marimo can be launched. */
@@ -344,19 +364,22 @@ export class ServerManager {
 	 * plain 200 check is wrong):
 	 *   - no token  → a `--token-password` server bounces to `/auth/login`; a
 	 *                 `--no-token`/foreign leftover serves 200. The latter is not
-	 *                 ours (it strips our token and renders blank) — evict it.
+	 *                 safe to adopt.
 	 *   - our token → the right token redirects away from `/auth/login`; a
 	 *                 wrong/stale token still lands on `/auth/login`. The latter
-	 *                 is unusable — evict it.
+	 *                 is unusable.
 	 *
 	 * This is shared by both server kinds: a `marimo run` app enforces auth at its
 	 * root identically to `marimo edit` (verified: no token → 303 `/auth/login`,
 	 * correct token → 303 `/`), so reconcile can confirm "run" records the same way.
 	 */
-	private async serverAcceptsOurAuth(port: number): Promise<boolean> {
+	private async serverAcceptsOurAuth(
+		port: number,
+		token = this.getActiveToken()
+	): Promise<boolean> {
 		const enforcesAuth = await this.redirectsToLogin(port, null);
 		if (!enforcesAuth) return false;
-		const ourTokenRejected = await this.redirectsToLogin(port, this.getActiveToken());
+		const ourTokenRejected = await this.redirectsToLogin(port, token);
 		return !ourTokenRejected;
 	}
 
@@ -432,30 +455,6 @@ export class ServerManager {
 		});
 	}
 
-	/**
-	 * Kill whatever is listening on `port`. Used to evict a leftover/foreign
-	 * marimo server that we can't authenticate against before spawning a fresh
-	 * one we control.
-	 */
-	private async killPort(port: number): Promise<void> {
-		const pids = await this.findPidsOnPort(port);
-		const isWin = process.platform === PLATFORM_WIN32;
-		for (const pid of pids) {
-			if (isWin) {
-				exec(`taskkill /PID ${pid.toString()} /T /F`, () => {
-					// No-op: ignore taskkill errors/output
-				});
-			} else {
-				try {
-					process.kill(pid, "SIGKILL");
-				} catch {
-					// Process already gone or not killable; ignore.
-				}
-			}
-		}
-		if (pids.length > 0) await sleep(SLEEP_DELAY_MS);
-	}
-
 	/** Poll the health endpoint until it responds or the timeout elapses. */
 	private async waitForReady(port: number): Promise<boolean> {
 		const deadline = Date.now() + this.settings.startupTimeout * MS_PER_SEC;
@@ -489,9 +488,13 @@ export class ServerManager {
 						return true;
 					}
 					console.warn(
-						`[MarimoBridge] An incompatible marimo server is holding port ${port.toString()}; evicting it and starting a fresh one.`
+						`[MarimoBridge] Port ${port.toString()} is occupied by a server that does not accept this plugin's token. It will not be terminated.`
 					);
-					await this.killPort(port);
+					new Notice(
+						`Port ${port.toString()} is already in use by another server. Change the marimo bridge port or stop that server manually.`,
+						NOTICE_TIMEOUT_MS
+					);
+					return false;
 				}
 
 				// Don't attempt to spawn if marimo isn't installed — fail fast instead
@@ -516,13 +519,22 @@ export class ServerManager {
 				}
 
 				const proc = this.spawnServer("edit", port);
-				this.edit = { kind: "edit", port, process: proc, ready: false };
+				const server: ManagedServer = {
+					kind: "edit",
+					port,
+					process: proc,
+					ready: false,
+				};
+				this.edit = server;
 
 				const ready = await this.waitForReady(port);
-				this.edit.ready = ready;
+				if (this.edit !== server) return false;
+				server.ready = ready;
 				if (ready) {
 					new Notice(`marimo server ready on :${port.toString()}`);
 				} else {
+					this.edit = null;
+					this.killProcess(proc);
 					new Notice(
 						`marimo server did not become ready within ${this.settings.startupTimeout.toString()}s. Check the marimo path in settings.`,
 						NOTICE_TIMEOUT_MS
@@ -547,7 +559,10 @@ export class ServerManager {
 	async ensureRunServer(vaultRelativePath: string): Promise<string | null> {
 		// Never spawn before prior-session orphans have been reconciled.
 		if (this.reconcilePromise) await this.reconcilePromise;
-		const existing = this.runServers.get(vaultRelativePath);
+		const notebook = resolveVaultNotebook(this.vaultPath, vaultRelativePath);
+		if (!notebook) return null;
+
+		const existing = this.runServers.get(notebook.key);
 		if (existing?.ready) {
 			return this.runServerUrl(existing.port);
 		}
@@ -555,34 +570,40 @@ export class ServerManager {
 		// on one page). Without this guard a second caller would see the first
 		// server still `ready === false`, spawn a SECOND process on a new port,
 		// and overwrite the map entry — orphaning (leaking) the first process.
-		const inFlight = this.runSpawning.get(vaultRelativePath);
+		const inFlight = this.runSpawning.get(notebook.key);
 		if (inFlight) return inFlight;
 
 		const spawning = (async () => {
 			try {
 				const port = await this.allocateRunPort();
-				const proc = this.spawnServer("run", port, vaultRelativePath);
+				const proc = this.spawnServer(
+					"run",
+					port,
+					notebook.absolutePath,
+					notebook.key
+				);
 				const server: ManagedServer = {
 					kind: "run",
 					port,
 					process: proc,
 					ready: false,
 				};
-				this.runServers.set(vaultRelativePath, server);
+				this.runServers.set(notebook.key, server);
 
 				const ready = await this.waitForReady(port);
+				if (this.runServers.get(notebook.key) !== server) return null;
 				server.ready = ready;
 				if (!ready) {
-					this.runServers.delete(vaultRelativePath);
+					this.runServers.delete(notebook.key);
 					this.killProcess(proc);
 					return null;
 				}
 				return this.runServerUrl(port);
 			} finally {
-				this.runSpawning.delete(vaultRelativePath);
+				this.runSpawning.delete(notebook.key);
 			}
 		})();
-		this.runSpawning.set(vaultRelativePath, spawning);
+		this.runSpawning.set(notebook.key, spawning);
 		return spawning;
 	}
 
@@ -626,7 +647,8 @@ export class ServerManager {
 	private spawnServer(
 		kind: ServerKind,
 		port: number,
-		file?: string
+		file?: string,
+		serverKey?: string
 	): ChildProcess {
 		const { cmd, prefixArgs } = this.resolveCommand();
 		const args = [...prefixArgs, kind];
@@ -656,7 +678,12 @@ export class ServerManager {
 		// force-quit/crash leaves a trail for next-launch reconciliation. Only
 		// servers we spawn are recorded — adopted servers are never recorded.
 		if (proc.pid !== undefined) {
-			this.records.add({ pid: proc.pid, port, kind });
+			this.records.add({
+				pid: proc.pid,
+				port,
+				kind,
+				token: this.getActiveToken(),
+			});
 		}
 
 		proc.stdout.on("data", (d: Buffer | string) => {
@@ -667,10 +694,24 @@ export class ServerManager {
 			// eslint-disable-next-line obsidianmd/rule-custom-message
 			console.log(`[marimo:${kind}:${port.toString()}] ${d.toString().trim()}`);
 		});
+		let finalized = false;
+		const finalize = () => {
+			if (finalized) return;
+			finalized = true;
+			if (proc.pid !== undefined) this.records.remove(proc.pid);
+			if (kind === "edit") {
+				if (this.edit?.process === proc) this.edit = null;
+			} else if (serverKey) {
+				const managed = this.runServers.get(serverKey);
+				if (managed?.process === proc) this.runServers.delete(serverKey);
+			}
+		};
 		proc.on("exit", (code) => {
 			// eslint-disable-next-line obsidianmd/rule-custom-message
 			console.log(`[marimo:${kind}:${port.toString()}] exited (${String(code)})`);
+			finalize();
 		});
+		proc.on("close", finalize);
 		proc.on("error", (err) => {
 			console.error(`[marimo:${kind}:${port.toString()}] spawn error`, err);
 			new Notice(
@@ -682,9 +723,10 @@ export class ServerManager {
 	}
 
 	/**
-	 * Kill a process we spawned and drop its crash-recovery record. On Windows we
-	 * kill the whole tree (`taskkill /T`) because marimo spawns worker
-	 * subprocesses that `child.kill()` would orphan.
+	 * Request termination of a process we spawned. Its crash-recovery record is
+	 * retained until the child emits `exit`/`close`. On Windows we kill the whole
+	 * tree (`taskkill /T`) because marimo spawns worker subprocesses that
+	 * `child.kill()` would orphan.
 	 */
 	private killProcess(proc: ChildProcess | null): void {
 		if (proc?.pid === undefined) return;
@@ -700,7 +742,6 @@ export class ServerManager {
 				proc.kill(SIGNAL_SIGTERM);
 			}
 		}
-		this.records.remove(pid);
 	}
 
 	/**
@@ -750,16 +791,16 @@ export class ServerManager {
 
 	/**
 	 * Confirm the server on `port` is one of ours (a `--token-password` server
-	 * that accepts the active token), bounded by a short timeout so a hung port
-	 * cannot stall startup.
+	 * that accepts the supplied spawn token), bounded by a short timeout so a
+	 * hung port cannot stall startup.
 	 */
-	private confirmOurServer(port: number): Promise<boolean> {
+	private confirmOurServer(port: number, token: string): Promise<boolean> {
 		const timeout = new Promise<boolean>((resolve) => {
 			window.setTimeout(() => {
 				resolve(false);
 			}, RECONCILE_CONFIRM_TIMEOUT_MS);
 		});
-		return Promise.race([this.serverAcceptsOurAuth(port), timeout]);
+		return Promise.race([this.serverAcceptsOurAuth(port, token), timeout]);
 	}
 
 	/** Stop and restart the edit server (exposed as a command). */
@@ -785,9 +826,9 @@ export class ServerManager {
 	/**
 	 * Synchronous, best-effort teardown for the application-exit handler, which
 	 * cannot reliably await async work. Signals every server we spawned and
-	 * prunes its record; anything that does not die in time is caught by
-	 * {@link reconcileOrphans} on the next launch (FR-001, FR-011). Safe to call
-	 * when nothing was started (FR-008).
+	 * retains records until confirmed exit; anything that does not die in time is
+	 * caught by {@link reconcileOrphans} on the next launch (FR-001, FR-011).
+	 * Safe to call when nothing was started (FR-008).
 	 */
 	stopAllSync(): void {
 		const pids: number[] = [];
@@ -799,7 +840,6 @@ export class ServerManager {
 		}
 		for (const pid of pids) {
 			this.killByPid(pid, true);
-			this.records.remove(pid);
 		}
 		this.edit = null;
 		this.runServers.clear();
@@ -819,39 +859,71 @@ export class ServerManager {
 	/**
 	 * Conservative reconciliation (FR-007a / FR-009): a leftover is terminated
 	 * only when we can positively confirm it is BOTH still alive AND our marimo
-	 * server (accepts the active token). Records we cannot confirm are dropped
-	 * without touching any process — guarding against recycled PIDs and
+	 * server (accepts its persisted spawn token). Records we cannot confirm are
+	 * dropped without touching any process — guarding against recycled PIDs and
 	 * reassigned ports.
 	 */
 	private async runReconcile(): Promise<void> {
 		const records: SpawnedServerRecord[] = this.records.load();
+		const remaining: SpawnedServerRecord[] = [];
 		for (const r of records) {
 			// Three independent confirmations, all required before we kill:
 			//   1. the recorded PID is still alive,
 			//   2. that SAME PID is the one currently LISTENing on the recorded
 			//      port (guards against a recycled PID that now belongs to an
 			//      unrelated process while some other marimo holds the port), and
-			//   3. the server on the port accepts our active token (it is ours).
+			//   3. the server on the port accepts its persisted spawn token.
 			// Anything we cannot positively confirm is left untouched (FR-007a/
 			// FR-009).
 			const ours =
 				this.isProcessAlive(r.pid) &&
 				(await this.findPidsOnPort(r.port)).includes(r.pid) &&
-				(await this.confirmOurServer(r.port));
+				(await this.confirmOurServer(r.port, r.token));
 			if (ours) {
 				this.killByPid(r.pid, false);
 				console.warn(
 					`[MarimoBridge] Reconciled orphaned marimo server from a prior session (pid ${r.pid.toString()}, :${r.port.toString()}).`
 				);
+				await this.waitForProcessExit(r.pid);
+				if (this.isProcessAlive(r.pid)) remaining.push(r);
 			}
 		}
-		// All prior-session records are now resolved; clear the store in a single
-		// write (reconcile runs before any spawn, so nothing was added meanwhile).
-		this.records.replaceAll([]);
+		this.records.replaceAll(remaining);
+	}
+
+	/** Wait briefly for a termination request to take effect. */
+	private async waitForProcessExit(pid: number): Promise<void> {
+		const deadline = Date.now() + RECONCILE_CONFIRM_TIMEOUT_MS;
+		while (Date.now() < deadline && this.isProcessAlive(pid)) {
+			await sleep(SLEEP_DELAY_MS);
+		}
+	}
+
+	private captureServerConfig(): ServerConfigSnapshot {
+		return {
+			pythonPath: this.settings.pythonPath,
+			marimoPath: this.settings.marimoPath,
+			port: this.settings.port,
+			host: this.settings.host,
+			apiToken: this.settings.apiToken,
+		};
 	}
 }
 
 /** Promise-based delay helper. */
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function sameServerConfig(
+	left: ServerConfigSnapshot,
+	right: ServerConfigSnapshot
+): boolean {
+	return (
+		left.pythonPath === right.pythonPath &&
+		left.marimoPath === right.marimoPath &&
+		left.port === right.port &&
+		left.host === right.host &&
+		left.apiToken === right.apiToken
+	);
 }

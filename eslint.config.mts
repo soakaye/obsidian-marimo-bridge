@@ -11,6 +11,8 @@ export default tseslint.config(
 		"dist",
 		"esbuild.config.mjs",
 		"version-bump.mjs",
+		"tests/run-tests.mjs",
+		"tests/fixtures",
 		"versions.json",
 		"main.js",
 		"package.json",
@@ -35,5 +37,15 @@ export default tseslint.config(
 			},
 		},
 	},
-	...obsidianmd.configs.recommended
+	...obsidianmd.configs.recommended,
+	{
+		files: ["tests/**/*.ts"],
+		rules: {
+			"@typescript-eslint/no-empty-function": "off",
+			"@typescript-eslint/no-extraneous-class": "off",
+			"@typescript-eslint/no-floating-promises": "off",
+			"@typescript-eslint/no-useless-constructor": "off",
+			"obsidianmd/no-global-this": "off",
+		},
+	}
 );

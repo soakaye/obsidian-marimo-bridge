@@ -20,7 +20,7 @@ All open technical unknowns from the plan's Technical Context are resolved below
 
 - **Decision**: Two-gate positive confirmation:
   1. **Liveness**: `process.kill(pid, 0)` (signal `0` probes existence without terminating) returns without `ESRCH`.
-  2. **Identity**: the recorded port answers as a marimo server that accepts the active token — reuse the existing `serverAcceptsOurAuth(port)` logic (`/auth/login` redirect probes). Only if BOTH gates pass is the process terminated. Otherwise the record is dropped and the process left running.
+  2. **Identity**: the recorded PID owns the recorded listening port and that server accepts the token persisted for the spawned process — reuse `serverAcceptsOurAuth(port, token)` (`/auth/login` redirect probes). Only if all gates pass is termination requested. Otherwise the record is dropped and the process left running.
 - **Rationale**: PIDs can be recycled by the OS after a crash, and ports can be reassigned. Requiring both a live PID and a token-accepting marimo server on the recorded port makes a false-positive kill of an unrelated process extremely unlikely, satisfying the conservative posture chosen in clarification.
 - **Alternatives considered**:
   - *Kill by recorded PID alone* — rejected: PID reuse → could kill an unrelated process (violates FR-009).
@@ -29,7 +29,7 @@ All open technical unknowns from the plan's Technical Context are resolved below
 
 ## R4. Where and how to persist the process records (must survive a crash, not clobber settings)?
 
-- **Decision**: A dedicated JSON file in the plugin directory (resolved via `FileSystemAdapter.getBasePath()` + the plugin's config-relative dir, or `manifest.dir`), written **synchronously** with `fs.writeFileSync` on each spawn and on each clean termination. Kept separate from `data.json`.
+- **Decision**: A dedicated JSON file in the plugin directory (resolved via `FileSystemAdapter.getBasePath()` + the plugin's config-relative dir, or `manifest.dir`), written **synchronously** with `fs.writeFileSync` on each spawn and confirmed process exit. Kept separate from `data.json`.
 - **Rationale**: `saveSettings()` does `saveData(this.settings)`, which overwrites the whole `data.json`; storing records there would be clobbered. A separate file written synchronously at spawn time guarantees the record exists before the child can be orphaned, with no async flush to lose on a crash. Desktop-only means `fs` is always available (Principle II).
 - **Alternatives considered**:
   - *Add a field to `data.json` and merge on save* — rejected: clobber risk + async writes can be lost on crash.

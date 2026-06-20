@@ -301,8 +301,8 @@ export default class MarimoBridgePlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
-		// A changed interpreter/marimo path may flip availability, so drop the
-		// cached result and let the next check re-detect.
+		// Re-evaluate executable availability and stop managed servers when a
+		// process-affecting setting (path, host, port, or token) changed.
 		this.servers.invalidateAvailability();
 	}
 }

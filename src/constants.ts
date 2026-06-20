@@ -52,7 +52,7 @@ export const SETTING_EMBED_HEIGHT_NAME = "Default embed height (px)";
 export const SETTING_CONTEXT_MENU_NAME = "Enable file explorer context menu";
 export const SETTING_API_TOKEN_NAME = "API token";
 export const SETTING_API_TOKEN_DESC = "API token for authenticating with the marimo server. If left empty, a secure, random session token is generated on startup.";
-export const SETTING_API_TOKEN_WARN = "Note: Changing this token requires restarting the server to take effect.";
+export const SETTING_API_TOKEN_WARN = "Changing this token stops the current server; it restarts on the next use.";
 
 // Commands
 export const CMD_OPEN_MARIMO_HOME_ID = "open-marimo-home";
@@ -96,7 +96,7 @@ export const MS_PER_SEC = 1000;
 export const PORT_MAX = 65535;
 
 // Spawned-server record store (crash-recovery for self-started marimo servers)
-/** File (in the plugin dir) holding PID/port records of servers we spawned. */
+/** File holding ownership records for servers spawned by this plugin. */
 export const FILE_SERVER_RECORDS = ".marimo-servers.json";
 /** Signal `0` probes process existence without terminating it. */
 export const SIGNAL_PROBE = 0;
