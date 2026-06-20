@@ -314,7 +314,7 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 					.setPlaceholder(SETTING_API_TOKEN_WARN)
 					.setValue(this.plugin.settings.apiToken)
 					.onChange(async (value) => {
-						this.plugin.settings.apiToken = value;
+						this.plugin.settings.apiToken = value.trim();
 						await this.plugin.saveSettings();
 					})
 			);

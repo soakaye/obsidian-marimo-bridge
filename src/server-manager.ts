@@ -50,7 +50,8 @@ import {
 	TEXT_VENV_BROKEN_ERROR,
 	SIGNAL_PROBE,
 	RECONCILE_CONFIRM_TIMEOUT_MS,
-	PORT_MAX
+	PORT_MAX,
+	ACCESS_TOKEN_KEY
 } from "./constants";
 
 type ServerKind = "edit" | "run";
@@ -306,12 +307,12 @@ export class ServerManager {
 	editFileUrl(vaultRelativePath: string): string {
 		return `${this.editBaseUrl}${QUERY_FILE}${encodeURIComponent(
 			vaultRelativePath
-		)}&access_token=${encodeURIComponent(this.getActiveToken())}`;
+		)}&${ACCESS_TOKEN_KEY}=${encodeURIComponent(this.getActiveToken())}`;
 	}
 
 	/** URL of the edit server's home page (notebook browser). */
 	editHomeUrl(): string {
-		return `${this.editBaseUrl}/?access_token=${encodeURIComponent(this.getActiveToken())}`;
+		return `${this.editBaseUrl}/?${ACCESS_TOKEN_KEY}=${encodeURIComponent(this.getActiveToken())}`;
 	}
 
 	// ---------------------------------------------------------------------
@@ -367,7 +368,7 @@ export class ServerManager {
 	private redirectsToLogin(port: number, token: string | null): Promise<boolean> {
 		return new Promise((resolve) => {
 			const path = token
-				? `/?access_token=${encodeURIComponent(token)}`
+				? `/?${ACCESS_TOKEN_KEY}=${encodeURIComponent(token)}`
 				: "/";
 			const req = http.request(
 				{ host: this.settings.host, port, path, method: METHOD_GET },
@@ -587,7 +588,7 @@ export class ServerManager {
 
 	/** URL of a read-only "run" server, carrying the active token. */
 	private runServerUrl(port: number): string {
-		return `${SCHEME_HTTP}${this.settings.host}:${port.toString()}/?access_token=${encodeURIComponent(
+		return `${SCHEME_HTTP}${this.settings.host}:${port.toString()}/?${ACCESS_TOKEN_KEY}=${encodeURIComponent(
 			this.getActiveToken()
 		)}`;
 	}

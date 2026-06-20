@@ -41,6 +41,9 @@ import {
 	HOST_LOCALHOST,
 	HOST_LOOPBACK,
 	QUERY_FILE_KEY,
+	ACCESS_TOKEN_KEY,
+	AUTH_RETRY_MAX,
+	PATH_AUTH_LOGIN,
 	PATH_NEW,
 	PATH_NEW_SLASH,
 	FILE_NEW,
@@ -182,19 +185,6 @@ export class MarimoEditorView extends ItemView {
 }
 
 /**
- * Hash a string to a short safe alphanumeric representation.
- */
-export function hashString(str: string): string {
-	let hash = 0;
-	for (let i = 0; i < str.length; i++) {
-		const char = str.charCodeAt(i);
-		hash = (hash << 5) - hash + char;
-		hash |= 0;
-	}
-	return Math.abs(hash).toString(36);
-}
-
-/**
  * Create an Electron `<webview>` embedding a marimo URL.
  *
  * `<webview>` is used (as the Surfing plugin does) instead of `<iframe>` so the
@@ -234,7 +224,6 @@ export function createMarimoWebview(
 		el.style.setProperty("height", `${heightPx.toString()}px`);
 	}
 
-	// (isLocalOrRelativeUrl removed as it is no longer used)
 	let initialFilePath: string | null = null;
 	try {
 		const parsedInit = new URL(url);
@@ -336,6 +325,9 @@ export function createMarimoWebview(
 	let loadRetries = 0;
 	const reloadWebview = (reason: string) => {
 		if (domReady || loadRetries >= WEBVIEW_MAX_LOAD_RETRIES) return;
+		// The view/embed may have been torn down while the watchdog was pending;
+		// reloading a detached <webview> is pointless (and the guest is gone).
+		if (!el.isConnected) return;
 		loadRetries++;
 		console.warn(
 			`[MarimoBridge] webview not ready (${reason}); reloading, attempt ${loadRetries.toString()}/${WEBVIEW_MAX_LOAD_RETRIES.toString()}`
@@ -402,8 +394,8 @@ export function createMarimoWebview(
 		const ev = event as unknown as { url: string };
 		try {
 			const parsed = new URL(ev.url);
-			if (parsed.pathname === "/auth/login") {
-				if (authRetryCount < 2) {
+			if (parsed.pathname === PATH_AUTH_LOGIN) {
+				if (authRetryCount < AUTH_RETRY_MAX) {
 					authRetryCount++;
 					const base = el.getAttribute(ATTR_SRC) ?? undefined;
 					if (base) {
@@ -486,8 +478,8 @@ export function createMarimoWebview(
 function addTokenToUrl(plugin: MarimoBridgePlugin, targetUrl: string): string {
 	try {
 		const parsed = new URL(targetUrl);
-		if (!parsed.searchParams.has("access_token")) {
-			parsed.searchParams.set("access_token", plugin.servers.getActiveToken());
+		if (!parsed.searchParams.has(ACCESS_TOKEN_KEY)) {
+			parsed.searchParams.set(ACCESS_TOKEN_KEY, plugin.servers.getActiveToken());
 			return parsed.href;
 		}
 	} catch {

@@ -228,7 +228,11 @@ export default class MarimoBridgePlugin extends Plugin {
 
 	onunload(): void {
 		// Tear down every server we started (best-effort; safe if none ran).
-		this.servers.stopAll();
+		// `servers` is unset when onload bailed early (non-FileSystem vault), so
+		// guard against an undefined reference here. The `!` field type does not
+		// model that early-return path, hence the suppressed "unnecessary" check.
+		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+		this.servers?.stopAll();
 	}
 
 	/**
@@ -242,15 +246,7 @@ export default class MarimoBridgePlugin extends Plugin {
 	): Promise<void> {
 		if (file === "__new__" || file?.startsWith("__new__")) {
 			const folder = this.app.workspace.getActiveFile()?.parent?.path ?? "";
-			let name = "untitled_marimo.py";
-			let target = normalizePath(folder ? `${folder}/${name}` : name);
-			let i = 1;
-			while (this.app.vault.getAbstractFileByPath(target)) {
-				name = `untitled_marimo_${(i++).toString()}.py`;
-				target = normalizePath(folder ? `${folder}/${name}` : name);
-			}
-			await this.app.vault.create(target, NEW_NOTEBOOK_TEMPLATE);
-			file = target;
+			file = await this.createUntitledNotebook(folder);
 		}
 
 		const leaf = openInNewTab
@@ -274,6 +270,16 @@ export default class MarimoBridgePlugin extends Plugin {
 	 */
 	private async createNotebook(folderPath?: string): Promise<void> {
 		const folder = folderPath ?? this.app.workspace.getActiveFile()?.parent?.path ?? "";
+		const target = await this.createUntitledNotebook(folder);
+		await this.openMarimo(target);
+	}
+
+	/**
+	 * Create an `untitled_marimo*.py` notebook in `folder` (vault-relative, or ""
+	 * for the vault root), picking the first non-colliding name, and return its
+	 * vault-relative path. Does not open it.
+	 */
+	private async createUntitledNotebook(folder: string): Promise<string> {
 		let name = "untitled_marimo.py";
 		let target = normalizePath(folder ? `${folder}/${name}` : name);
 		let i = 1;
@@ -282,7 +288,7 @@ export default class MarimoBridgePlugin extends Plugin {
 			target = normalizePath(folder ? `${folder}/${name}` : name);
 		}
 		await this.app.vault.create(target, NEW_NOTEBOOK_TEMPLATE);
-		await this.openMarimo(target);
+		return target;
 	}
 
 	async loadSettings(): Promise<void> {
