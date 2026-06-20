@@ -11,6 +11,7 @@
 import { FileSystemAdapter, Notice, requestUrl } from "obsidian";
 import { spawn, exec, execSync, type ChildProcess } from "child_process";
 import * as http from "http";
+import * as net from "net";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
@@ -48,7 +49,8 @@ import {
 	TEXT_NOT_INSTALLED_ERROR,
 	TEXT_VENV_BROKEN_ERROR,
 	SIGNAL_PROBE,
-	RECONCILE_CONFIRM_TIMEOUT_MS
+	RECONCILE_CONFIRM_TIMEOUT_MS,
+	PORT_MAX
 } from "./constants";
 
 type ServerKind = "edit" | "run";
@@ -76,6 +78,8 @@ export class ServerManager {
 	private available: boolean | null = null;
 	private sessionToken: string | null = null;
 	private editSpawning: Promise<boolean> | null = null;
+	/** In-flight `run` spawns keyed by notebook path; dedupes concurrent embeds. */
+	private runSpawning = new Map<string, Promise<string | null>>();
 	/** Crash-recovery store of servers we spawned (PID/port/kind). */
 	private records: ServerRecordStore;
 	/** Set once {@link reconcileOrphans} starts; `ensure*` await it before spawning. */
@@ -343,6 +347,10 @@ export class ServerManager {
 	 *   - our token → the right token redirects away from `/auth/login`; a
 	 *                 wrong/stale token still lands on `/auth/login`. The latter
 	 *                 is unusable — evict it.
+	 *
+	 * This is shared by both server kinds: a `marimo run` app enforces auth at its
+	 * root identically to `marimo edit` (verified: no token → 303 `/auth/login`,
+	 * correct token → 303 `/`), so reconcile can confirm "run" records the same way.
 	 */
 	private async serverAcceptsOurAuth(port: number): Promise<boolean> {
 		const enforcesAuth = await this.redirectsToLogin(port, null);
@@ -392,7 +400,7 @@ export class ServerManager {
 			// itself or unrelated processes. The Windows branch already filters
 			// for LISTENING below.
 			const cmd = isWin
-				? `netstat -ano | findstr :${port.toString()}`
+				? `netstat -ano -p tcp`
 				: `lsof -ti tcp:${port.toString()} -sTCP:LISTEN`;
 			exec(cmd, (err, stdout) => {
 				if (!stdout) {
@@ -401,10 +409,22 @@ export class ServerManager {
 				}
 				const pids = new Set<number>();
 				for (const line of stdout.split(/\r?\n/)) {
-					const n = isWin
-						? Number(/LISTENING\s+(\d+)/.exec(line)?.[1])
-						: Number(line.trim());
-					if (Number.isInteger(n) && n > 0) pids.add(n);
+					if (isWin) {
+						// Columns: Proto  Local  Foreign  State  PID. Match the
+						// LOCAL address's port exactly and require LISTENING, so a
+						// bare `:port` substring (e.g. in a foreign address, or a
+						// longer port that contains these digits) cannot pull in an
+						// unrelated PID.
+						const m =
+							/^\s*TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)/.exec(line);
+						if (m && Number(m[1]) === port) {
+							const n = Number(m[2]);
+							if (Number.isInteger(n) && n > 0) pids.add(n);
+						}
+					} else {
+						const n = Number(line.trim());
+						if (Number.isInteger(n) && n > 0) pids.add(n);
+					}
 				}
 				resolve([...pids]);
 			});
@@ -528,37 +548,77 @@ export class ServerManager {
 		if (this.reconcilePromise) await this.reconcilePromise;
 		const existing = this.runServers.get(vaultRelativePath);
 		if (existing?.ready) {
-			return `http://${this.settings.host}:${existing.port.toString()}/?access_token=${encodeURIComponent(this.getActiveToken())}`;
+			return this.runServerUrl(existing.port);
 		}
+		// Dedupe concurrent callers (e.g. two `mode: run` embeds of the same file
+		// on one page). Without this guard a second caller would see the first
+		// server still `ready === false`, spawn a SECOND process on a new port,
+		// and overwrite the map entry — orphaning (leaking) the first process.
+		const inFlight = this.runSpawning.get(vaultRelativePath);
+		if (inFlight) return inFlight;
 
-		const port = this.allocateRunPort();
-		const proc = this.spawnServer("run", port, vaultRelativePath);
-		const server: ManagedServer = {
-			kind: "run",
-			port,
-			process: proc,
-			ready: false,
-		};
-		this.runServers.set(vaultRelativePath, server);
+		const spawning = (async () => {
+			try {
+				const port = await this.allocateRunPort();
+				const proc = this.spawnServer("run", port, vaultRelativePath);
+				const server: ManagedServer = {
+					kind: "run",
+					port,
+					process: proc,
+					ready: false,
+				};
+				this.runServers.set(vaultRelativePath, server);
 
-		const ready = await this.waitForReady(port);
-		server.ready = ready;
-		if (!ready) {
-			this.runServers.delete(vaultRelativePath);
-			this.killProcess(proc);
-			return null;
-		}
-		return `http://${this.settings.host}:${port.toString()}/?access_token=${encodeURIComponent(this.getActiveToken())}`;
+				const ready = await this.waitForReady(port);
+				server.ready = ready;
+				if (!ready) {
+					this.runServers.delete(vaultRelativePath);
+					this.killProcess(proc);
+					return null;
+				}
+				return this.runServerUrl(port);
+			} finally {
+				this.runSpawning.delete(vaultRelativePath);
+			}
+		})();
+		this.runSpawning.set(vaultRelativePath, spawning);
+		return spawning;
 	}
 
-	/** Pick the next free port for a run server, avoiding ones already in use. */
-	private allocateRunPort(): number {
+	/** URL of a read-only "run" server, carrying the active token. */
+	private runServerUrl(port: number): string {
+		return `${SCHEME_HTTP}${this.settings.host}:${port.toString()}/?access_token=${encodeURIComponent(
+			this.getActiveToken()
+		)}`;
+	}
+
+	/**
+	 * Pick the next free port for a run server. Skips ports we already track AND
+	 * ports the OS reports as busy (a foreign process bound there): handing marimo
+	 * an occupied port would only fail to bind and waste the whole startup timeout.
+	 * Falls back to the last candidate if no free port is found before
+	 * {@link PORT_MAX} (marimo's bind will then fail fast and surface the error).
+	 */
+	private async allocateRunPort(): Promise<number> {
 		const used = new Set<number>([this.settings.port]);
 		for (const s of this.runServers.values()) used.add(s.port);
 		let p = this.nextRunPort;
-		while (used.has(p)) p++;
+		while (p <= PORT_MAX && (used.has(p) || !(await this.isPortFree(p)))) p++;
+		if (p > PORT_MAX) p = this.nextRunPort; // exhausted; let marimo report it
 		this.nextRunPort = p + 1;
 		return p;
+	}
+
+	/** True if `port` can be bound on the configured host right now (best-effort). */
+	private isPortFree(port: number): Promise<boolean> {
+		return new Promise((resolve) => {
+			const tester = net.createServer();
+			tester.once("error", () => { resolve(false); });
+			tester.once("listening", () => {
+				tester.close(() => { resolve(true); });
+			});
+			tester.listen(port, this.settings.host);
+		});
 	}
 
 	/** Spawn a marimo `edit`/`run` server, wiring its output to the console. */
@@ -765,17 +825,28 @@ export class ServerManager {
 	private async runReconcile(): Promise<void> {
 		const records: SpawnedServerRecord[] = this.records.load();
 		for (const r of records) {
-			const live = this.isProcessAlive(r.pid);
-			if (live && (await this.confirmOurServer(r.port))) {
+			// Three independent confirmations, all required before we kill:
+			//   1. the recorded PID is still alive,
+			//   2. that SAME PID is the one currently LISTENing on the recorded
+			//      port (guards against a recycled PID that now belongs to an
+			//      unrelated process while some other marimo holds the port), and
+			//   3. the server on the port accepts our active token (it is ours).
+			// Anything we cannot positively confirm is left untouched (FR-007a/
+			// FR-009).
+			const ours =
+				this.isProcessAlive(r.pid) &&
+				(await this.findPidsOnPort(r.port)).includes(r.pid) &&
+				(await this.confirmOurServer(r.port));
+			if (ours) {
 				this.killByPid(r.pid, false);
 				console.warn(
 					`[MarimoBridge] Reconciled orphaned marimo server from a prior session (pid ${r.pid.toString()}, :${r.port.toString()}).`
 				);
 			}
-			// Unconfirmed → leave any process untouched (conservative posture).
-			// Either way the prior-session record is now resolved; drop it.
-			this.records.remove(r.pid);
 		}
+		// All prior-session records are now resolved; clear the store in a single
+		// write (reconcile runs before any spawn, so nothing was added meanwhile).
+		this.records.replaceAll([]);
 	}
 }
 

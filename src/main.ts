@@ -196,8 +196,13 @@ export default class MarimoBridgePlugin extends Plugin {
 		// A full Obsidian quit does not reliably invoke onunload, and Unix servers
 		// are spawned detached (their own process group), so they survive a parent
 		// exit. Synchronously signal every server we spawned on window unload;
-		// anything that slips through is reconciled on the next launch.
+		// anything that slips through is reconciled on the next launch. We listen
+		// on both `beforeunload` and `unload` because neither fires reliably across
+		// all quit paths; `stopAllSync` is idempotent, so a double-fire is a no-op.
 		this.registerDomEvent(window, "beforeunload", () => {
+			this.servers.stopAllSync();
+		});
+		this.registerDomEvent(window, "unload", () => {
 			this.servers.stopAllSync();
 		});
 
@@ -235,8 +240,6 @@ export default class MarimoBridgePlugin extends Plugin {
 		openInNewTab = true,
 		active = true
 	): Promise<void> {
-		console.warn("[MarimoBridge-Diagnostic] openMarimo called. file:", file, "openInNewTab:", openInNewTab, "active:", active);
-		
 		if (file === "__new__" || file?.startsWith("__new__")) {
 			const folder = this.app.workspace.getActiveFile()?.parent?.path ?? "";
 			let name = "untitled_marimo.py";
@@ -253,7 +256,6 @@ export default class MarimoBridgePlugin extends Plugin {
 		const leaf = openInNewTab
 			? this.app.workspace.getLeaf("tab")
 			: this.app.workspace.getMostRecentLeaf();
-		console.warn("[MarimoBridge-Diagnostic] Target leaf obtained:", leaf ? "yes" : "null/undefined");
 		if (!leaf) return;
 		await leaf.setViewState({
 			type: VIEW_TYPE_MARIMO,

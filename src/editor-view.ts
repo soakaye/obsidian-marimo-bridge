@@ -152,7 +152,6 @@ export class MarimoEditorView extends ItemView {
 
 		const onFileChanged = (newFile: string) => {
 			if (this.currentFile !== newFile) {
-				console.warn("[MarimoBridge-Diagnostic] file changed from", this.currentFile, "to", newFile);
 				this.currentFile = newFile;
 				void this.leaf.setViewState({
 					type: VIEW_TYPE_MARIMO,
@@ -283,7 +282,6 @@ export function createMarimoWebview(
 
 	// Link interception handler
 	const handleLinkClick = async (targetUrl: string, disposition?: string) => {
-		console.warn("[MarimoBridge-Diagnostic] handleLinkClick starting. targetUrl:", targetUrl, "disposition:", disposition);
 		try {
 			const base = el.getAttribute(ATTR_SRC) ?? undefined;
 			const parsed = new URL(targetUrl, base);
@@ -294,23 +292,19 @@ export function createMarimoWebview(
 				if (!filePath && (parsed.pathname === PATH_NEW || parsed.pathname.startsWith(PATH_NEW_SLASH))) {
 					filePath = FILE_NEW;
 				}
-				console.warn("[MarimoBridge-Diagnostic] isLocal=true, filePath:", filePath);
 				if (filePath) {
 					const decodedPath = decodeURIComponent(filePath);
 					const active = disposition !== DISPOSITION_BG_TAB;
 					const isMarimo = decodedPath.endsWith(EXT_PY) || decodedPath.startsWith(FILE_NEW);
 					if (isMarimo) {
-						console.warn("[MarimoBridge-Diagnostic] Calling openMarimo for:", decodedPath);
 						await plugin.openMarimo(decodedPath, true, active);
 					} else {
 						// US2: Non-marimo local workspace file
-						console.warn("[MarimoBridge-Diagnostic] Opening non-marimo file natively:", decodedPath);
 						await plugin.app.workspace.openLinkText(decodedPath, "", LEAF_TAB, { active });
 					}
 				}
 			} else {
 				// US3: External link - open in default browser
-				console.warn("[MarimoBridge-Diagnostic] External link, calling openExternal for:", parsed.href);
 				await shell.openExternal(parsed.href);
 			}
 		} catch (e) {
@@ -369,8 +363,6 @@ export function createMarimoWebview(
 
 	el.addEventListener(EVENT_WILL_NAVIGATE, (event: Event) => {
 		const ev = event as unknown as { url: string; preventDefault: () => void };
-		console.warn("[MarimoBridge-Diagnostic] will-navigate fired for URL:", ev.url);
-
 		if (shouldIntercept(ev.url)) {
 			ev.preventDefault();
 			void handleLinkClick(ev.url, DISPOSITION_DEFAULT);
@@ -408,7 +400,6 @@ export function createMarimoWebview(
 	let authRetryCount = 0;
 	el.addEventListener(EVENT_DID_NAVIGATE, (event: Event) => {
 		const ev = event as unknown as { url: string };
-		console.warn("[MarimoBridge-Diagnostic] did-navigate fired for URL:", ev.url);
 		try {
 			const parsed = new URL(ev.url);
 			if (parsed.pathname === "/auth/login") {

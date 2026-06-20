@@ -93,6 +93,8 @@ export const CMD_ARG_HOST = "--host";
 export const CMD_ARG_TOKEN_PASSWORD = "--token-password";
 export const SIGNAL_SIGTERM = "SIGTERM";
 export const MS_PER_SEC = 1000;
+/** Highest valid TCP port number; bounds the run-server port search. */
+export const PORT_MAX = 65535;
 
 // Spawned-server record store (crash-recovery for self-started marimo servers)
 /** File (in the plugin dir) holding PID/port records of servers we spawned. */
