@@ -46,8 +46,6 @@ interface ManagerInternals {
 	serverAcceptsOurAuth(port: number, token?: string): Promise<boolean>;
 	adoptableSameVault(port: number): Promise<boolean>;
 	allocateEditPort(): Promise<number>;
-	isPortFree(port: number): Promise<boolean>;
-	killPort(port: number): Promise<boolean>;
 	findPidsOnPort(port: number): Promise<number[]>;
 	isProcessAlive(pid: number): boolean;
 	confirmOurServer(port: number, token?: string): Promise<boolean>;
@@ -152,87 +150,77 @@ test("builds token-bearing run URLs on the fixed loopback host", () => {
 	}
 });
 
-test("adopts a compatible authenticated edit server without spawning", async () => {
+// Vault-scoped policy (015): a server on the configured port that even accepts
+// our token but is NOT confirmed by a same-vault record (e.g. another vault
+// sharing the token) is neither adopted nor terminated — we spawn our own on a
+// free port instead.
+test("does not adopt or terminate an authenticated server lacking a same-vault record", async () => {
 	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
 	try {
-		const { manager, internal } = makeManager(vault);
+		const { manager, settings, internal } = makeManager(vault);
 		let spawnCount = 0;
-		internal.isPortFree = async () => false;
+		internal.isPortFree = async (p) => p !== settings.port; // configured busy
 		internal.healthOk = async () => true;
 		internal.serverAcceptsOurAuth = async () => true;
-		internal.spawnServer = () => {
+		internal.findPidsOnPort = async () => [];
+		internal.resolveCommand = () => ({
+			cmd: process.execPath,
+			prefixArgs: [FIXTURE],
+		});
+		manager.checkAvailable = async () => true;
+		internal.waitForReady = async () => true;
+		const realSpawn = internal.spawnServer.bind(manager);
+		internal.spawnServer = (kind, port, file) => {
 			spawnCount++;
-			return fakeChild(99_999_997);
+			return realSpawn(kind, port, file);
 		};
 
 		assert.equal(await manager.ensureEditServer(), true);
-		assert.equal(spawnCount, 0);
-		assert.ok(internal.edit);
-		assert.equal(internal.edit.process, null);
-		assert.equal(internal.edit.ready, true);
+		assert.equal(spawnCount, 1); // spawned our own, not adopted
+		const edit = internal.edit;
+		assert.ok(edit);
+		assert.notEqual(edit.port, settings.port); // fell back off the busy port
+		assert.notEqual(edit.process, null);
+
+		const child = edit.process;
+		if (child) {
+			child.kill("SIGTERM");
+			await once(child, "exit");
+		}
 	} finally {
 		rmSync(vault, { recursive: true, force: true });
 	}
 });
 
-test("evicts an incompatible process occupying the edit port", async () => {
+// US2 / 015: a NON-marimo process holding the configured port (not free, not
+// healthy) must also trigger fallback — the `isPortFree` guard, not a health
+// check, gates this so we never try to bind an occupied port.
+test("falls back to a free port when a non-marimo process occupies the edit port", async () => {
 	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
 	try {
-		const { manager, internal } = makeManager(vault);
-		let killCount = 0;
-		internal.isPortFree = async () => false;
-		internal.healthOk = async () => true;
+		const { manager, settings, internal } = makeManager(vault);
+		internal.isPortFree = async (p) => p !== settings.port; // configured busy
+		internal.healthOk = async () => false; // not marimo
 		internal.serverAcceptsOurAuth = async () => false;
-		internal.killPort = async () => {
-			killCount++;
-			return true;
-		};
-		manager.checkAvailable = async () => false;
-
-		assert.equal(await manager.ensureEditServer(), false);
-		assert.equal(killCount, 1);
-	} finally {
-		rmSync(vault, { recursive: true, force: true });
-	}
-});
-
-test("does not spawn when an incompatible edit port cannot be freed", async () => {
-	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
-	try {
-		const { manager, internal } = makeManager(vault);
-		let spawnCount = 0;
-		internal.isPortFree = async () => false;
-		internal.healthOk = async () => true;
-		internal.serverAcceptsOurAuth = async () => false;
-		internal.killPort = async () => false;
+		internal.findPidsOnPort = async () => [];
+		internal.resolveCommand = () => ({
+			cmd: process.execPath,
+			prefixArgs: [FIXTURE],
+		});
 		manager.checkAvailable = async () => true;
-		internal.spawnServer = () => {
-			spawnCount++;
-			return fakeChild(99_999_995);
-		};
+		internal.waitForReady = async () => true;
 
-		assert.equal(await manager.ensureEditServer(), false);
-		assert.equal(spawnCount, 0);
-	} finally {
-		rmSync(vault, { recursive: true, force: true });
-	}
-});
+		assert.equal(await manager.ensureEditServer(), true);
+		const edit = internal.edit;
+		assert.ok(edit);
+		assert.equal(edit.port, settings.port + 1); // next free port
+		assert.notEqual(edit.process, null);
 
-test("evicts a non-marimo process occupying the edit port", async () => {
-	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
-	try {
-		const { manager, internal } = makeManager(vault);
-		let killCount = 0;
-		internal.isPortFree = async () => false;
-		internal.healthOk = async () => false;
-		internal.killPort = async () => {
-			killCount++;
-			return true;
-		};
-		manager.checkAvailable = async () => false;
-
-		assert.equal(await manager.ensureEditServer(), false);
-		assert.equal(killCount, 1);
+		const child = edit.process;
+		if (child) {
+			child.kill("SIGTERM");
+			await once(child, "exit");
+		}
 	} finally {
 		rmSync(vault, { recursive: true, force: true });
 	}
@@ -582,38 +570,6 @@ const FIXTURE = path.resolve(process.cwd(), "tests/fixtures/fake-marimo.mjs");
 
 // US1: a healthy server with no matching same-vault record (e.g. another vault
 // sharing our token) must NOT be adopted; we fall back and spawn our own.
-test("does not adopt a server lacking a same-vault record; falls back to a free port", async () => {
-	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
-	try {
-		const { manager, settings, internal } = makeManager(vault);
-		internal.healthOk = async (p) => p === settings.port;
-		// Would have been adopted under the old token-only logic:
-		internal.serverAcceptsOurAuth = async () => true;
-		internal.allocateEditPort = async () => 2799;
-		internal.resolveCommand = () => ({
-			cmd: process.execPath,
-			prefixArgs: [FIXTURE],
-		});
-		manager.checkAvailable = async () => true;
-		internal.waitForReady = async () => true;
-
-		assert.equal(await manager.ensureEditServer(), true);
-		// Spawned our own (process !== null) on the fallback port, not adopted.
-		const edit = internal.edit;
-		assert.ok(edit);
-		assert.equal(edit.port, 2799);
-		assert.notEqual(edit.process, null);
-
-		const child = edit.process;
-		if (child) {
-			child.kill("SIGTERM");
-			await once(child, "exit");
-		}
-	} finally {
-		rmSync(vault, { recursive: true, force: true });
-	}
-});
-
 // US1: a healthy server confirmed by a same-vault record IS adopted (reused).
 test("adopts a healthy server confirmed by a same-vault record", async () => {
 	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
@@ -626,6 +582,7 @@ test("adopts a healthy server confirmed by a same-vault record", async () => {
 			token: "session-token",
 			vaultRoot: internal.vaultPath,
 		});
+		internal.isPortFree = async () => false; // configured port occupied by it
 		internal.healthOk = async () => true;
 		internal.findPidsOnPort = async () => [4242];
 		internal.serverAcceptsOurAuth = async () => true;
@@ -706,6 +663,7 @@ test("restartEditServer brings a fresh server ready (FR-007)", async () => {
 			cmd: process.execPath,
 			prefixArgs: [FIXTURE],
 		});
+		internal.isPortFree = async () => true; // configured port is free
 		internal.healthOk = async () => false;
 		manager.checkAvailable = async () => true;
 		internal.waitForReady = async () => true;

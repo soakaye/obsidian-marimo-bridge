@@ -88,6 +88,7 @@ test("drops malformed ownership records while retaining valid records", () => {
 			port: 2718,
 			kind: "run",
 			token: "session-token",
+			vaultRoot: "/vault",
 		};
 		writeFileSync(
 			file,

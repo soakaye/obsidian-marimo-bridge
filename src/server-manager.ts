@@ -62,7 +62,6 @@ import {
 	formatServerHealthUrl,
 	formatAccessTokenPath,
 	formatLsofCommand,
-	formatPortConflictNotice,
 	formatServerReadyNotice,
 	formatServerTimeoutNotice,
 	formatServerOutputLog,
@@ -71,6 +70,7 @@ import {
 	formatServerSpawnErrorNotice,
 	formatTaskkillCommand,
 	formatOrphanReconciledLog,
+	formatPortFallbackLog,
 } from "./constants";
 
 type ServerKind = "edit" | "run";
@@ -129,7 +129,7 @@ export class ServerManager {
 		// `vaultRoot` persisted into every record, so adoption/reconciliation can
 		// confirm a server belongs to *this* vault by exact path equality.
 		this.vaultPath = canonicalizePath(adapter.getBasePath());
-		this.nextRunPort = settings.port + 1;
+		this.nextRunPort = settings.port + OFFSET_ONE;
 		this.records = new ServerRecordStore(recordsPath);
 		this.serverConfig = this.captureServerConfig();
 	}
@@ -373,7 +373,7 @@ export class ServerManager {
 		// foreign server). Only when no edit server is running yet do we fall
 		// back to the configured port.
 		const port = this.edit?.port ?? this.settings.port;
-		return `${SCHEME_HTTP}${this.settings.host}:${port.toString()}`;
+		return formatServerBaseUrl(port);
 	}
 
 	/** URL that opens a specific notebook in the edit server. */
@@ -518,36 +518,6 @@ export class ServerManager {
 		});
 	}
 
-	/** Terminate every process listening on `port` and report whether it was found. */
-	private async killPort(port: number): Promise<boolean> {
-		const pids = await this.findPidsOnPort(port);
-		if (pids.length === 0) return false;
-		for (const pid of pids) {
-			this.killByPid(pid, false);
-		}
-		const deadline = Date.now() + RECONCILE_CONFIRM_TIMEOUT_MS;
-		while (Date.now() < deadline) {
-			if (await this.isPortFree(port)) return true;
-			await sleep(SLEEP_DELAY_MS);
-		}
-		return this.isPortFree(port);
-	}
-
-	private async resolveEditPort(
-		port: number
-	): Promise<ManagedServer | null | undefined> {
-		if (await this.isPortFree(port)) return undefined;
-		if (await this.healthOk(port) && await this.serverAcceptsOurAuth(port)) {
-			return { kind: MODE_EDIT, port, process: null, ready: true };
-		}
-		if (await this.killPort(port)) return undefined;
-		new Notice(
-			formatPortConflictNotice(port),
-			NOTICE_TIMEOUT_MS
-		);
-		return null;
-	}
-
 	/** Poll the health endpoint until it responds or the timeout elapses. */
 	private async waitForReady(port: number): Promise<boolean> {
 		const deadline = Date.now() + this.settings.startupTimeout * MS_PER_SEC;
@@ -571,18 +541,18 @@ export class ServerManager {
 
 				// Reuse a pre-existing server on the configured port ONLY if it is
 				// one *this vault* started — confirmed by a same-vault crash-recovery
-				// record (record-based identity). A healthy server we cannot confirm
-				// as ours (another vault sharing our token, or a foreign server) is
-				// NEVER adopted and NEVER terminated; instead we fall back to a free
-				// port and start our own server there.
-				if (await this.healthOk(port)) {
+				// record (record-based identity). Anything else holding the port — a
+				// server started by another vault (even one sharing our token), a
+				// foreign marimo, or a non-marimo process — is NEVER adopted and
+				// NEVER terminated; we fall back to a free port and start our own
+				// server there. The `isPortFree` guard (rather than a health check)
+				// also covers a non-marimo occupant we could not otherwise detect.
+				if (!(await this.isPortFree(port))) {
 					if (await this.adoptableSameVault(port)) {
-						this.edit = { kind: "edit", port, process: null, ready: true };
+						this.edit = { kind: MODE_EDIT, port, process: null, ready: true };
 						return true;
 					}
-					console.warn(
-						`[MarimoBridge] Port ${port.toString()} is occupied by a server not started by this vault. It will not be terminated; falling back to a free port.`
-					);
+					console.warn(formatPortFallbackLog(port));
 					port = await this.allocateEditPort();
 				}
 
@@ -603,7 +573,7 @@ export class ServerManager {
 				// between the check above and here. Adopt it (same-vault record)
 				// instead of spawning a second process that would only fail to bind.
 				if (await this.healthOk(port) && await this.adoptableSameVault(port)) {
-					this.edit = { kind: "edit", port, process: null, ready: true };
+					this.edit = { kind: MODE_EDIT, port, process: null, ready: true };
 					return true;
 				}
 
@@ -655,7 +625,7 @@ export class ServerManager {
 			.load()
 			.find(
 				(r) =>
-					r.kind === "edit" &&
+					r.kind === MODE_EDIT &&
 					r.port === port &&
 					r.vaultRoot === this.vaultPath
 			);

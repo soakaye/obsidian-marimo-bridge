@@ -130,7 +130,7 @@ export class ServerRecordStore {
 			isString(rec.token) &&
 			rec.token.trim().length > 0;
 		const vaultRootOk =
-			isString(typeof rec.vaultRoot) && rec.vaultRoot.trim().length > 0;
+			isString(rec.vaultRoot) && rec.vaultRoot.trim().length > 0;
 		return (
 			pidOk &&
 			portOk &&

@@ -410,10 +410,6 @@ export function formatLsofCommand(port: number): string {
 	return `lsof -ti tcp:${port.toString()} -sTCP:LISTEN`;
 }
 
-export function formatPortConflictNotice(port: number): string {
-	return `Port ${port.toString()}${RUNTIME_CONSTANTS.NOTICE_PORT_CONFLICT_SUFFIX}`;
-}
-
 export function formatServerReadyNotice(port: number): string {
 	return `marimo server ready on :${port.toString()}`;
 }
@@ -452,6 +448,10 @@ export function formatTaskkillCommand(pid: number): string {
 
 export function formatOrphanReconciledLog(pid: number, port: number): string {
 	return `[MarimoBridge] Reconciled orphaned marimo server from a prior session (pid ${pid.toString()}, :${port.toString()}).`;
+}
+
+export function formatPortFallbackLog(port: number): string {
+	return `[MarimoBridge] Port ${port.toString()} is occupied by a server not started by this vault. It will not be terminated; falling back to a free port.`;
 }
 
 export function formatVaultExecutablePath(

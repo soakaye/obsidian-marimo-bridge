@@ -1,9 +1,12 @@
 <!--
 SYNC IMPACT REPORT:
-- Version change: 1.1.0 -> 2.0.0
+- Version change: 2.0.0 -> 3.0.0
 - List of modified principles:
   - Redefined (backward incompatible): IV. Safe Local Bindings
-    — reversed the rule from "without token validation" to "with token validation"
+    — replaced "evict and replace any token-mismatched server" with
+      vault-scoped, record-based reuse and a non-evicting free-port fallback:
+      a server is reused only when positively confirmed to belong to THIS
+      vault, and a server that cannot be confirmed as ours is never terminated.
 - Added sections: None
 - Removed sections: None
 - Templates requiring updates:
@@ -11,8 +14,8 @@ SYNC IMPACT REPORT:
   - .specify/templates/spec-template.md (✅ aligned, generic placeholders)
   - .specify/templates/tasks-template.md (✅ aligned, generic placeholders)
 - Downstream artifacts to refresh:
-  - specs/012-fix-restart-blank-view/plan.md (⚠ Constitution Check note for IV now obsolete — IV is PASS, no longer a deviation)
-  - specs/011-api-token-configuration/* (token-auth feature that motivated this amendment; now aligned)
+  - specs/015-vault-scoped-server-adoption/* (feature that motivated this
+    amendment; implementation aligns — record-based adoption + port fallback)
 - Follow-up TODOs: None
 -->
 # marimo Bridge for Obsidian Constitution
@@ -29,7 +32,7 @@ This plugin is built exclusively for Obsidian Desktop, depending on Node.js stan
 All spawned `marimo` server processes (both for editing and lazy running) MUST be terminated when the plugin unloads or on Obsidian app exit. On Windows, the entire process tree must be killed recursively. On Unix-like systems, server processes must be spawned detached and terminated by their process group to prevent orphan processes.
 
 ### IV. Safe Local Bindings
-The local `marimo` servers MUST run in headless mode with token validation enabled (e.g. launched with `--token-password` using the plugin's active access token), binding strictly to the loopback interface (`127.0.0.1`). Every embedded request MUST carry that access token, and the plugin MUST only reuse a pre-existing server that accepts the active token (evicting and replacing any incompatible or token-mismatched server). Configuration options must ensure that port bindings do not conflict and are bound safely.
+The local `marimo` servers MUST run in headless mode with token validation enabled (e.g. launched with `--token-password` using the plugin's active access token), binding strictly to the loopback interface (`127.0.0.1`). Every embedded request MUST carry that access token. The plugin MUST only reuse a pre-existing server that it can positively confirm belongs to the **current vault**, identified by a same-vault crash-recovery record (matching vault root, the recorded PID listening on the port, and the recorded token still accepted); a token match alone is NOT sufficient, because separate vaults may share a configured token. The plugin MUST NOT terminate a server it cannot confirm as its own — for example one started by another vault on the same port, or a foreign process; instead it MUST fall back to a free port and start its own server there. Configuration options and this fallback together MUST ensure that port bindings do not conflict and are bound safely.
 
 ### V. Virtual Environment Preference
 The plugin must dynamically detect vault-local Python virtual environments (e.g., `<vault>/.venv`) and use their executables (`python` or `marimo`) before falling back to system-wide installations.
@@ -56,4 +59,4 @@ Version Bumps:
 - MINOR: Adding new principles or significant workflow changes.
 - PATCH: Clarifications, formatting, and typo fixes.
 
-**Version**: 2.0.0 | **Ratified**: 2026-06-18 | **Last Amended**: 2026-06-20
+**Version**: 3.0.0 | **Ratified**: 2026-06-18 | **Last Amended**: 2026-06-21
