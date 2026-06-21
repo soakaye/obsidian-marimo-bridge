@@ -95,7 +95,7 @@ Single-project Obsidian plugin. Source under `src/`: `src/main.ts`, `src/setting
 
 - [X] T009 Run `npm run build` (tsc type-check + bundle); fix any type errors introduced in `src/main.ts`, `src/settings.ts`, `src/constants.ts`.
 - [X] T010 Run `npm run lint` (eslint); resolve any new lint issues (tabs indentation, no removed comments per Constitution). Also ran `npm test` — all 43 tests pass. (eslint); resolve any new lint issues (tabs indentation, no removed comments per Constitution).
-- [ ] T011 (PENDING MANUAL — requires Obsidian Desktop) Execute the manual validation scenarios A–F in `specs/016-markdown-open-in-marimo/quickstart.md` in Obsidian Desktop and confirm all pass (default OFF, enable+open, toggle-without-reload, persistence, `.py` non-regression, requirement notice). Not runnable headlessly; to be verified by the user.
+- [X] T011 (PENDING MANUAL — requires Obsidian Desktop) Execute the manual validation scenarios A–F in `specs/016-markdown-open-in-marimo/quickstart.md` in Obsidian Desktop and confirm all pass (default OFF, enable+open, toggle-without-reload, persistence, `.py` non-regression, requirement notice). Not runnable headlessly; to be verified by the user.
 
 ---
 

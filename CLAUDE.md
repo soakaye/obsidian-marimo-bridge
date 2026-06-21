@@ -33,8 +33,9 @@ npm run lint    # eslint (flat config, eslint-plugin-obsidianmd)
 - Always stop spawned marimo processes on `onunload`; on Windows kill the whole
   process tree.
 
+
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
-at specs/016-markdown-open-in-marimo/plan.md
+shell commands, and other important information, read the current plan:
+`specs/016-markdown-open-in-marimo/plan.md`
 <!-- SPECKIT END -->
