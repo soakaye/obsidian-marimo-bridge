@@ -3,8 +3,8 @@
 	"name": "marimo Bridge",
 	"version": "1.0.0",
 	"minAppVersion": "1.5.0",
-	"description": "View and edit marimo notebooks (.py) inside Obsidian. Auto-manages a local marimo server and embeds its UI in a webview.",
+	"description": "View and edit marimo notebooks (.py) with an auto-managed local server embedded in a webview.",
 	"author": "soakaye",
-	"authorUrl": "https://github.com/soakaye/obsidian-marimo-bridge",
+	"authorUrl": "https://github.com/soakaye",
 	"isDesktopOnly": true
 }

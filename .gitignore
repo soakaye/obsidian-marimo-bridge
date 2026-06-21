@@ -40,4 +40,5 @@ __pycache__/
 venv/
 *.egg-info/
 
+temp/
 .marimo-servers.json

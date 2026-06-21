@@ -69,7 +69,14 @@ export default class MarimoBridgePlugin extends Plugin {
 	/** Persisted user settings (loaded in {@link onload}). */
 	settings!: MarimoBridgeSettings;
 	/** Owns the lifecycle of every marimo server process. */
-	servers!: ServerManager;
+	private serverManager: ServerManager | null = null;
+
+	get servers(): ServerManager {
+		if (!this.serverManager) {
+			throw new Error(RUNTIME_CONSTANTS.ERROR_SERVER_MANAGER_UNAVAILABLE);
+		}
+		return this.serverManager;
+	}
 
 	async onload(): Promise<void> {
 		// Register custom marimo logo icon
@@ -97,7 +104,7 @@ export default class MarimoBridgePlugin extends Plugin {
 			this.manifest.dir ?? "",
 			FILE_SERVER_RECORDS
 		);
-		this.servers = new ServerManager(adapter, this.settings, recordsPath);
+		this.serverManager = new ServerManager(adapter, this.settings, recordsPath);
 
 		// Kick off prior-session orphan reconciliation NOW (not awaited here) so
 		// `reconcilePromise` is set before Obsidian restores any marimo view. A
@@ -254,11 +261,8 @@ export default class MarimoBridgePlugin extends Plugin {
 
 	onunload(): void {
 		// Tear down every server we started (best-effort; safe if none ran).
-		// `servers` is unset when onload bailed early (non-FileSystem vault), so
-		// guard against an undefined reference here. The `!` field type does not
-		// model that early-return path, hence the suppressed "unnecessary" check.
-		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-		this.servers?.stopAll();
+		// `serverManager` is unset when onload bailed early (non-FileSystem vault).
+		this.serverManager?.stopAll();
 	}
 
 	/**
@@ -277,9 +281,10 @@ export default class MarimoBridgePlugin extends Plugin {
 			file = created;
 		}
 
+		const previousLeaf = this.app.workspace.getMostRecentLeaf();
 		const leaf = openInNewTab
 			? this.app.workspace.getLeaf(LEAF_TAB)
-			: this.app.workspace.getMostRecentLeaf();
+			: previousLeaf;
 		if (!leaf) return;
 		await leaf.setViewState({
 			type: VIEW_TYPE_MARIMO,
@@ -287,8 +292,9 @@ export default class MarimoBridgePlugin extends Plugin {
 			state: { file },
 		});
 		if (active) {
-			// eslint-disable-next-line obsidianmd/no-unsupported-api
-			void this.app.workspace.revealLeaf(leaf);
+			this.app.workspace.setActiveLeaf(leaf, { focus: true });
+		} else if (previousLeaf && leaf !== previousLeaf) {
+			this.app.workspace.setActiveLeaf(previousLeaf, { focus: true });
 		}
 	}
 

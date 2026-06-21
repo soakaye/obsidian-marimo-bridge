@@ -338,6 +338,7 @@ export const RUNTIME_CONSTANTS = {
 	LOG_PIP_INSTALL_FAILED: "[marimo-bridge] pip install failed:",
 	LOG_EDIT_SERVER_EXCEPTION: "[MarimoBridge] Exception in ensureEditServer:",
 	LOG_RECORD_WRITE_FAILED: "[MarimoBridge] Failed to write server records:",
+	ERROR_SERVER_MANAGER_UNAVAILABLE: "Marimo server manager is unavailable.",
 	TEXT_TIMEOUT_SUFFIX: "\n[timeout]",
 	TEXT_INSTALLED: "installed",
 	HTTP_ROOT: "/",
@@ -348,8 +349,8 @@ export const RUNTIME_CONSTANTS = {
 	HTTP_REDIRECT_MIN: 300,
 	HTTP_REDIRECT_MAX_EXCLUSIVE: 400,
 	AUTH_TIMEOUT_MULTIPLIER: 6,
-	CONSOLE_LEVEL_ERROR: 2,
-	CONSOLE_LEVEL_WARNING: 1,
+	CONSOLE_LEVEL_ERROR: 3,
+	CONSOLE_LEVEL_WARNING: 2,
 	NETSTAT_PORT_GROUP: 1,
 	NETSTAT_PID_GROUP: 2,
 } as const;

@@ -63,6 +63,28 @@ interface MarimoViewState {
 	file?: string;
 }
 
+interface ElectronModule {
+	shell: {
+		openExternal(url: string): Promise<void>;
+	};
+}
+
+interface ElectronWindow {
+	require(moduleName: string): ElectronModule;
+}
+
+interface MarimoWebviewElement extends HTMLElement {
+	executeJavaScript(script: string): unknown;
+	reload(): void;
+}
+
+interface WebviewConsoleMessageEvent extends Event {
+	level: number;
+	message: string;
+	line: number;
+	sourceId: string;
+}
+
 export class MarimoEditorView extends ItemView {
 	private plugin: MarimoBridgePlugin;
 	private currentFile: string | undefined;
@@ -210,10 +232,10 @@ export function createMarimoWebview(
 	onFileChanged?: (filePath: string) => void,
 	heightPx?: number
 ): HTMLElement {
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call
-	const electron = (window as any).require(
+	const electronWindow = window as unknown as ElectronWindow;
+	const electron = electronWindow.require(
 		RUNTIME_CONSTANTS.ELECTRON_MODULE
-	) as { shell: { openExternal: (url: string) => Promise<void> } };
+	);
 	const shell = electron.shell;
 	// Create the <webview> DETACHED. Electron reads `preload` and `partition`
 	// when the guest attaches (on insertion into the DOM); setting them after
@@ -222,7 +244,7 @@ export function createMarimoWebview(
 	// end of this function.
 	const el = parent.ownerDocument.createElement(
 		RUNTIME_CONSTANTS.TAG_WEBVIEW as keyof HTMLElementTagNameMap
-	) as HTMLElement;
+	) as unknown as MarimoWebviewElement;
 	el.addClass(CLS_WEBVIEW);
 	el.setAttribute(ATTR_ALLOWPOPUPS, "");
 	el.setAttribute(ATTR_PARTITION, partition);
@@ -319,8 +341,7 @@ export function createMarimoWebview(
 	el.addEventListener(EVENT_DOM_READY, () => {
 		domReady = true;
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call
-			(el as any).executeJavaScript(INJECTION_SCRIPT);
+			void el.executeJavaScript(INJECTION_SCRIPT);
 		} catch (e) {
 			console.error(RUNTIME_CONSTANTS.LOG_INJECTION_FAILED, e);
 		}
@@ -359,8 +380,7 @@ export function createMarimoWebview(
 			)
 		);
 		try {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call
-			(el as any).reload();
+			el.reload();
 		} catch (e) {
 			console.error(RUNTIME_CONSTANTS.LOG_WEBVIEW_RELOAD_FAILED, e);
 		}
@@ -453,9 +473,8 @@ export function createMarimoWebview(
 	// The injected script reports navigations as a single sentinel-prefixed
 	// console line; intercept those here and route them, forwarding everything
 	// else to the Obsidian console for debugging.
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	el.addEventListener(EVENT_CONSOLE_MESSAGE, (event: any) => {
-		const ev = event as { level: number; message: string; line: number; sourceId: string };
+	el.addEventListener(EVENT_CONSOLE_MESSAGE, (event: Event) => {
+		const ev = event as WebviewConsoleMessageEvent;
 
 		if (ev.message.startsWith(MARIMO_OPEN_SENTINEL)) {
 			const json = ev.message.slice(MARIMO_OPEN_SENTINEL.length).trim();
@@ -488,8 +507,7 @@ export function createMarimoWebview(
 		} else if (ev.level === RUNTIME_CONSTANTS.CONSOLE_LEVEL_WARNING) {
 			console.warn(prefix);
 		} else {
-			// eslint-disable-next-line
-			console.log(prefix);
+			console.debug(prefix);
 		}
 	});
 

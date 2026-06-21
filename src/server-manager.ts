@@ -815,12 +815,10 @@ export class ServerManager {
 		}
 
 		proc.stdout.on(RUNTIME_CONSTANTS.EVENT_DATA, (d: Buffer | string) => {
-			// eslint-disable-next-line obsidianmd/rule-custom-message
-			console.log(formatServerOutputLog(kind, port, d.toString().trim()));
+			console.debug(formatServerOutputLog(kind, port, d.toString().trim()));
 		});
 		proc.stderr.on(RUNTIME_CONSTANTS.EVENT_DATA, (d: Buffer | string) => {
-			// eslint-disable-next-line obsidianmd/rule-custom-message
-			console.log(formatServerOutputLog(kind, port, d.toString().trim()));
+			console.debug(formatServerOutputLog(kind, port, d.toString().trim()));
 		});
 		let finalized = false;
 		const finalize = () => {
@@ -835,8 +833,7 @@ export class ServerManager {
 			}
 		};
 		proc.on(RUNTIME_CONSTANTS.EVENT_EXIT, (code) => {
-			// eslint-disable-next-line obsidianmd/rule-custom-message
-			console.log(formatServerExitLog(kind, port, code));
+			console.debug(formatServerExitLog(kind, port, code));
 			finalize();
 		});
 		proc.on(RUNTIME_CONSTANTS.EVENT_CLOSE, finalize);

@@ -739,3 +739,52 @@ test("edit URLs follow the bound edit-server port", () => {
 		rmSync(vault, { recursive: true, force: true });
 	}
 });
+
+test("forwards child output and exit diagnostics at debug severity", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	const originalStdout = process.env.FAKE_MARIMO_STDOUT;
+	const originalStderr = process.env.FAKE_MARIMO_STDERR;
+	const originalExitCode = process.env.FAKE_MARIMO_EXIT_CODE;
+	const originalDebug = console.debug;
+	const messages: string[] = [];
+	try {
+		const { recordsPath, internal } = makeManager(vault);
+		internal.resolveCommand = () => ({
+			cmd: process.execPath,
+			prefixArgs: [FIXTURE],
+		});
+		process.env.FAKE_MARIMO_STDOUT = "stdout diagnostic";
+		process.env.FAKE_MARIMO_STDERR = "stderr diagnostic";
+		process.env.FAKE_MARIMO_EXIT_CODE = "7";
+		console.debug = (message?: unknown) => {
+			messages.push(String(message));
+		};
+
+		const child = internal.spawnServer("edit", 2718);
+		await once(child, "exit");
+
+		assert.ok(messages.some((message) => message.includes("stdout diagnostic")));
+		assert.ok(messages.some((message) => message.includes("stderr diagnostic")));
+		assert.ok(messages.some((message) => message.includes("exited (7)")));
+		assert.equal(readRecordCount(recordsPath), 0);
+		assert.equal(internal.edit, null);
+	} finally {
+		console.debug = originalDebug;
+		if (originalStdout === undefined) {
+			delete process.env.FAKE_MARIMO_STDOUT;
+		} else {
+			process.env.FAKE_MARIMO_STDOUT = originalStdout;
+		}
+		if (originalStderr === undefined) {
+			delete process.env.FAKE_MARIMO_STDERR;
+		} else {
+			process.env.FAKE_MARIMO_STDERR = originalStderr;
+		}
+		if (originalExitCode === undefined) {
+			delete process.env.FAKE_MARIMO_EXIT_CODE;
+		} else {
+			process.env.FAKE_MARIMO_EXIT_CODE = originalExitCode;
+		}
+		rmSync(vault, { recursive: true, force: true });
+	}
+});

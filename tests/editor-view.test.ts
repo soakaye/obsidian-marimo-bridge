@@ -7,6 +7,7 @@ class FakeWebview extends EventTarget {
 	private attributes = new Map<string, string>();
 	isConnected = false;
 	reloadCount = 0;
+	executedScripts: string[] = [];
 	style = {
 		setProperty: (_name: string, _value: string): void => {},
 	};
@@ -25,7 +26,9 @@ class FakeWebview extends EventTarget {
 		this.reloadCount++;
 	}
 
-	executeJavaScript(_script: string): void {}
+	executeJavaScript(script: string): void {
+		this.executedScripts.push(script);
+	}
 
 	remove(): void {
 		this.isConnected = false;
@@ -320,4 +323,141 @@ test("retries an explicit main-frame load failure", () => {
 	webview.dispatchEvent(event);
 
 	assert.equal(webview.reloadCount, 1);
+});
+
+test("injects the interception script when the webview becomes ready", () => {
+	const webview = new FakeWebview();
+	const parent = {
+		ownerDocument: {
+			createElement: () => webview,
+		},
+		appendChild: (child: FakeWebview) => {
+			child.isConnected = true;
+			return child;
+		},
+		createDiv: () => ({}),
+	};
+	const plugin = {
+		servers: {
+			getActiveToken: () => "session-token",
+		},
+		openMarimo: async () => {},
+		app: {
+			workspace: {
+				openLinkText: async () => {},
+			},
+		},
+	} as unknown as MarimoBridgePlugin;
+	Object.defineProperty(globalThis, "window", {
+		configurable: true,
+		value: {
+			require: () => ({
+				shell: {
+					openExternal: async () => {},
+				},
+			}),
+			setTimeout: () => 0,
+			clearTimeout: () => {},
+		},
+	});
+
+	createMarimoWebview(
+		plugin,
+		parent as unknown as HTMLElement,
+		"http://127.0.0.1:2718/",
+		"persist:test"
+	);
+	webview.dispatchEvent(new Event("dom-ready"));
+
+	assert.equal(webview.executedScripts.length, 1);
+	assert.match(webview.executedScripts[0] ?? "", /marimoBridgeInjected/);
+});
+
+test("forwards webview console messages at matching severities", () => {
+	const webview = new FakeWebview();
+	const parent = {
+		ownerDocument: {
+			createElement: () => webview,
+		},
+		appendChild: (child: FakeWebview) => {
+			child.isConnected = true;
+			return child;
+		},
+		createDiv: () => ({}),
+	};
+	const plugin = {
+		servers: {
+			getActiveToken: () => "session-token",
+		},
+		openMarimo: async () => {},
+		app: {
+			workspace: {
+				openLinkText: async () => {},
+			},
+		},
+	} as unknown as MarimoBridgePlugin;
+	Object.defineProperty(globalThis, "window", {
+		configurable: true,
+		value: {
+			require: () => ({
+				shell: {
+					openExternal: async () => {},
+				},
+			}),
+			setTimeout: () => 0,
+			clearTimeout: () => {},
+		},
+	});
+	const seen = {
+		debug: [] as string[],
+		warn: [] as string[],
+		error: [] as string[],
+	};
+	const original = {
+		debug: console.debug,
+		warn: console.warn,
+		error: console.error,
+	};
+	console.debug = (message?: unknown) => {
+		seen.debug.push(String(message));
+	};
+	console.warn = (message?: unknown) => {
+		seen.warn.push(String(message));
+	};
+	console.error = (message?: unknown) => {
+		seen.error.push(String(message));
+	};
+
+	try {
+		createMarimoWebview(
+			plugin,
+			parent as unknown as HTMLElement,
+			"http://127.0.0.1:2718/",
+			"persist:test"
+		);
+		for (const [level, message] of [
+			[0, "debug message"],
+			[1, "routine message"],
+			[2, "warning message"],
+			[3, "error message"],
+		] as const) {
+			const event = new Event("console-message");
+			Object.defineProperties(event, {
+				level: { value: level },
+				message: { value: message },
+				line: { value: 7 },
+				sourceId: { value: "guest.js" },
+			});
+			webview.dispatchEvent(event);
+		}
+	} finally {
+		console.debug = original.debug;
+		console.warn = original.warn;
+		console.error = original.error;
+	}
+
+	assert.match(seen.debug[0] ?? "", /debug message/);
+	assert.match(seen.debug[1] ?? "", /routine message/);
+	assert.match(seen.warn[0] ?? "", /warning message/);
+	assert.match(seen.error[0] ?? "", /error message/);
 });
