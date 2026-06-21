@@ -8,7 +8,7 @@ description: "Task list for feature implementation: Open Markdown Notebooks in m
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/ui-contract.md, quickstart.md
 
-**Tests**: No automated test harness exists in this repository and TDD was not requested. Validation is performed via `npm run build`, `npm run lint`, and the manual scenarios in quickstart.md. No test tasks are generated.
+**Tests**: TDD was not requested, so no new test tasks were generated. NOTE (corrected during implementation): the repository DOES have a `node:test` suite (`npm test`, `tests/run-tests.mjs`); adding the new required settings field obliged updating two fixtures (`tests/notebook-path.test.ts`, `tests/server-manager.test.ts`). Validation is performed via `npm run build`, `npm run lint`, `npm test`, and the manual scenarios in quickstart.md.
 
 **Organization**: Tasks are grouped by user story (from spec.md) to enable independent implementation and verification.
 
@@ -28,7 +28,7 @@ Single-project Obsidian plugin. Source under `src/`: `src/main.ts`, `src/setting
 
 **Purpose**: Establish a known-good baseline before changes.
 
-- [ ] T001 Confirm baseline builds clean: run `npm install` then `npm run build` and `npm run lint` on branch `016-markdown-open-in-marimo` with no changes; record that both pass.
+- [X] T001 Confirm baseline builds clean: run `npm install` then `npm run build` and `npm run lint` on branch `016-markdown-open-in-marimo` with no changes; record that both pass.
 
 ---
 
@@ -38,9 +38,9 @@ Single-project Obsidian plugin. Source under `src/`: `src/main.ts`, `src/setting
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Add `EXTENSION_MD: "md"` to the `RUNTIME_CONSTANTS` object in `src/constants.ts` (next to the existing `EXTENSION_PY: "py"`).
-- [ ] T003 Add `export const DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU = false;` to `src/constants.ts` (next to the existing `DEFAULT_SHOW_CONTEXT_MENU`).
-- [ ] T004 In `src/settings.ts`, add `showMarkdownContextMenu: boolean;` to the `MarimoBridgeSettings` interface (with a doc comment, e.g. "Add 'Open in marimo' to .md files in the file explorer."), and add `showMarkdownContextMenu: DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU,` to `DEFAULT_SETTINGS`, importing `DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU` from `./constants`. (Depends on T003.)
+- [X] T002 Add `EXTENSION_MD: "md"` to the `RUNTIME_CONSTANTS` object in `src/constants.ts` (next to the existing `EXTENSION_PY: "py"`).
+- [X] T003 Add `export const DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU = false;` to `src/constants.ts` (next to the existing `DEFAULT_SHOW_CONTEXT_MENU`).
+- [X] T004 In `src/settings.ts`, add `showMarkdownContextMenu: boolean;` to the `MarimoBridgeSettings` interface (with a doc comment, e.g. "Add 'Open in marimo' to .md files in the file explorer."), and add `showMarkdownContextMenu: DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU,` to `DEFAULT_SETTINGS`, importing `DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU` from `./constants`. (Depends on T003.)
 
 **Checkpoint**: Constant and persisted setting field exist; menu and settings-UI work can proceed.
 
@@ -54,7 +54,7 @@ Single-project Obsidian plugin. Source under `src/`: `src/main.ts`, `src/setting
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] In `src/main.ts`, extend the existing `file-menu` handler (currently at ~lines 174-191, the `EXTENSION_PY` block) so it also adds an "Open in marimo" item for a `TFile` whose extension is `RUNTIME_CONSTANTS.EXTENSION_MD` **only when** `this.settings.showMarkdownContextMenu` is true. The new item uses `TITLE_OPEN_IN_MARIMO`, `ICON_MARIMO_LOGO`, and `onClick(() => void this.openMarimo(file.path))` — identical to the `.py` item. The `.py` branch MUST remain unconditional and unchanged (FR-009). Ensure at most one "Open in marimo" item is added per file.
+- [X] T005 [US1] In `src/main.ts`, extend the existing `file-menu` handler (currently at ~lines 174-191, the `EXTENSION_PY` block) so it also adds an "Open in marimo" item for a `TFile` whose extension is `RUNTIME_CONSTANTS.EXTENSION_MD` **only when** `this.settings.showMarkdownContextMenu` is true. The new item uses `TITLE_OPEN_IN_MARIMO`, `ICON_MARIMO_LOGO`, and `onClick(() => void this.openMarimo(file.path))` — identical to the `.py` item. The `.py` branch MUST remain unconditional and unchanged (FR-009). Ensure at most one "Open in marimo" item is added per file.
 
 **Checkpoint**: User Story 1 is functional — `.md` files open in marimo from the context menu (setting can be flipped manually in `data.json` until US2 adds the toggle UI).
 
@@ -68,8 +68,8 @@ Single-project Obsidian plugin. Source under `src/`: `src/main.ts`, `src/setting
 
 ### Implementation for User Story 2
 
-- [ ] T006 [US2] Add `export const SETTING_MD_CONTEXT_MENU_NAME = "Open Markdown files in marimo";` and `export const SETTING_MD_CONTEXT_MENU_DESC = "...";` to `src/constants.ts` (next to `SETTING_CONTEXT_MENU_NAME`/`SETTING_CONTEXT_MENU_DESC`). The description placeholder will be finalized in T008 (US3).
-- [ ] T007 [US2] In `src/settings.ts` `MarimoBridgeSettingTab.display()`, add a new `new Setting(containerEl).setName(SETTING_MD_CONTEXT_MENU_NAME).setDesc(SETTING_MD_CONTEXT_MENU_DESC).addToggle(...)` block (next to the existing context-menu / take-over toggles, ~lines 271-329). Bind the toggle to `this.plugin.settings.showMarkdownContextMenu`; in `onChange(value)` set the setting and `await this.plugin.saveSettings()`. Import the two new constants. (Depends on T006.)
+- [X] T006 [US2] Add `export const SETTING_MD_CONTEXT_MENU_NAME = "Open Markdown files in marimo";` and `export const SETTING_MD_CONTEXT_MENU_DESC = "...";` to `src/constants.ts` (next to `SETTING_CONTEXT_MENU_NAME`/`SETTING_CONTEXT_MENU_DESC`). The description placeholder will be finalized in T008 (US3).
+- [X] T007 [US2] In `src/settings.ts` `MarimoBridgeSettingTab.display()`, add a new `new Setting(containerEl).setName(SETTING_MD_CONTEXT_MENU_NAME).setDesc(SETTING_MD_CONTEXT_MENU_DESC).addToggle(...)` block (next to the existing context-menu / take-over toggles, ~lines 271-329). Bind the toggle to `this.plugin.settings.showMarkdownContextMenu`; in `onChange(value)` set the setting and `await this.plugin.saveSettings()`. Import the two new constants. (Depends on T006.)
 
 **Checkpoint**: User Stories 1 and 2 both work — the toggle controls the `.md` item, persists across restart (FR-007), and applies on the next menu invocation without reload (FR-008).
 
@@ -83,7 +83,7 @@ Single-project Obsidian plugin. Source under `src/`: `src/main.ts`, `src/setting
 
 ### Implementation for User Story 3
 
-- [ ] T008 [US3] Finalize `SETTING_MD_CONTEXT_MENU_DESC` in `src/constants.ts` so it states that enabling adds "Open in marimo" to `.md` files AND that a marimo Markdown integration such as `mkdocs-marimo` or `quarto-marimo` must be installed for the file to render as a notebook (FR-010). While editing, confirm the T005 handler gates the `.md` item on the setting only — no package/runtime detection is present (FR-004). (Depends on T006; refines the constant used by T007.)
+- [X] T008 [US3] Finalize `SETTING_MD_CONTEXT_MENU_DESC` in `src/constants.ts` so it states that enabling adds "Open in marimo" to `.md` files AND that a marimo Markdown integration such as `mkdocs-marimo` or `quarto-marimo` must be installed for the file to render as a notebook (FR-010). While editing, confirm the T005 handler gates the `.md` item on the setting only — no package/runtime detection is present (FR-004). (Depends on T006; refines the constant used by T007.)
 
 **Checkpoint**: All three user stories functional; requirement communicated; no detection logic added.
 
@@ -93,9 +93,9 @@ Single-project Obsidian plugin. Source under `src/`: `src/main.ts`, `src/setting
 
 **Purpose**: Verify correctness and run end-to-end validation.
 
-- [ ] T009 Run `npm run build` (tsc type-check + bundle); fix any type errors introduced in `src/main.ts`, `src/settings.ts`, `src/constants.ts`.
-- [ ] T010 Run `npm run lint` (eslint); resolve any new lint issues (tabs indentation, no removed comments per Constitution).
-- [ ] T011 Execute the manual validation scenarios A–F in `specs/016-markdown-open-in-marimo/quickstart.md` in Obsidian Desktop and confirm all pass (default OFF, enable+open, toggle-without-reload, persistence, `.py` non-regression, requirement notice).
+- [X] T009 Run `npm run build` (tsc type-check + bundle); fix any type errors introduced in `src/main.ts`, `src/settings.ts`, `src/constants.ts`.
+- [X] T010 Run `npm run lint` (eslint); resolve any new lint issues (tabs indentation, no removed comments per Constitution). Also ran `npm test` — all 43 tests pass. (eslint); resolve any new lint issues (tabs indentation, no removed comments per Constitution).
+- [ ] T011 (PENDING MANUAL — requires Obsidian Desktop) Execute the manual validation scenarios A–F in `specs/016-markdown-open-in-marimo/quickstart.md` in Obsidian Desktop and confirm all pass (default OFF, enable+open, toggle-without-reload, persistence, `.py` non-regression, requirement notice). Not runnable headlessly; to be verified by the user.
 
 ---
 

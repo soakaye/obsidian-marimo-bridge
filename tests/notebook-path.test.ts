@@ -43,6 +43,7 @@ function settings(): MarimoBridgeSettings {
 		defaultEmbedMode: "edit",
 		defaultEmbedHeight: 600,
 		showContextMenu: true,
+		showMarkdownContextMenu: false,
 		apiToken: "session-token",
 	};
 }

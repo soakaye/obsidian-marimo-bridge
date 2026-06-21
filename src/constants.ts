@@ -13,6 +13,7 @@ export const DEFAULT_TAKE_OVER_PY_EXTENSION = true;
 export const DEFAULT_EMBED_MODE = "edit" as const;
 export const DEFAULT_EMBED_HEIGHT = 600;
 export const DEFAULT_SHOW_CONTEXT_MENU = true;
+export const DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU = false;
 export const DEFAULT_API_TOKEN = "";
 
 // UI & Notice Messages / Timing
@@ -49,6 +50,7 @@ export const SETTING_TAKEOVER_NAME = "Open .py files in marimo by default";
 export const SETTING_EMBED_MODE_NAME = "Default embed mode";
 export const SETTING_EMBED_HEIGHT_NAME = "Default embed height (px)";
 export const SETTING_CONTEXT_MENU_NAME = "Enable file explorer context menu";
+export const SETTING_MD_CONTEXT_MENU_NAME = "Open Markdown files in marimo";
 export const SETTING_API_TOKEN_NAME = "API token";
 export const SETTING_API_TOKEN_DESC = "API token for authenticating with the marimo server. If left empty, a secure, random session token is generated on startup.";
 export const SETTING_API_TOKEN_WARN = "Changing this token stops the current server; it restarts on the next use.";
@@ -277,6 +279,7 @@ export const SETTING_AUTO_START_DESC = "Launch the marimo edit server when Obsid
 export const SETTING_TAKEOVER_DESC = "When on, clicking a .py file opens the marimo editor. Turn off to keep .py as plain text and use the command / context menu instead. Change takes effect after reloading the plugin.";
 export const SETTING_EMBED_MODE_DESC = "Mode for ```marimo blocks when not specified.";
 export const SETTING_CONTEXT_MENU_DESC = "When enabled, right-clicking files and folders in the file explorer shows the 'create new marimo notebook' option.";
+export const SETTING_MD_CONTEXT_MENU_DESC = "When enabled, right-clicking a Markdown (.md) file in the file explorer shows an 'Open in marimo' option. Requires a marimo Markdown integration (e.g. mkdocs-marimo or quarto-marimo) installed in your marimo environment for the file to open as a notebook.";
 export const TEXT_EMBED_MODE_EDIT = "Edit (full editor)";
 export const TEXT_EMBED_MODE_RUN = "Run (read-only app)";
 export const TEXT_NOT_INSTALLED_ERROR = "Marimo is not installed. Install it from the marimo bridge settings.";
@@ -289,6 +292,7 @@ export const RUNTIME_CONSTANTS = {
 	BACKSLASH: "\\",
 	PARENT_PATH: "..",
 	EXTENSION_PY: "py",
+	EXTENSION_MD: "md",
 	MARKDOWN_BLOCK_MARIMO: "marimo",
 	EVENT_FILE_MENU: "file-menu",
 	EVENT_BEFORE_UNLOAD: "beforeunload",

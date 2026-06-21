@@ -170,15 +170,20 @@ export default class MarimoBridgePlugin extends Plugin {
 			},
 		});
 
-		// Right-click → "Open in marimo" on `.py` files in the file explorer.
+		// Right-click → "Open in marimo" on `.py` files in the file explorer,
+		// and on `.md` files when the Markdown context-menu option is enabled
+		// (requires a marimo Markdown integration in the user's environment).
 		this.registerEvent(
 			this.app.workspace.on(
 				RUNTIME_CONSTANTS.EVENT_FILE_MENU,
 				(menu, file) => {
-					if (
-						file instanceof TFile &&
-						file.extension === RUNTIME_CONSTANTS.EXTENSION_PY
-					) {
+					if (!(file instanceof TFile)) return;
+					const isPy =
+						file.extension === RUNTIME_CONSTANTS.EXTENSION_PY;
+					const isMd =
+						file.extension === RUNTIME_CONSTANTS.EXTENSION_MD &&
+						this.settings.showMarkdownContextMenu;
+					if (isPy || isMd) {
 						menu.addItem((item) =>
 							item
 								.setTitle(RUNTIME_CONSTANTS.TITLE_OPEN_IN_MARIMO)

@@ -17,6 +17,7 @@ import {
 	DEFAULT_EMBED_MODE,
 	DEFAULT_EMBED_HEIGHT,
 	DEFAULT_SHOW_CONTEXT_MENU,
+	DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU,
 	DEFAULT_API_TOKEN,
 	SETTINGS_TAB_HEADER,
 	SETTING_MARIMO_PATH_NAME,
@@ -29,6 +30,7 @@ import {
 	SETTING_EMBED_MODE_NAME,
 	SETTING_EMBED_HEIGHT_NAME,
 	SETTING_CONTEXT_MENU_NAME,
+	SETTING_MD_CONTEXT_MENU_NAME,
 	SETTING_API_TOKEN_NAME,
 	SETTING_API_TOKEN_DESC,
 	SETTING_API_TOKEN_WARN,
@@ -51,6 +53,7 @@ import {
 	SETTING_TAKEOVER_DESC,
 	SETTING_EMBED_MODE_DESC,
 	SETTING_CONTEXT_MENU_DESC,
+	SETTING_MD_CONTEXT_MENU_DESC,
 	TEXT_EMBED_MODE_EDIT,
 	TEXT_EMBED_MODE_RUN,
 	TEXT_VENV_BROKEN_HINT,
@@ -85,6 +88,8 @@ export interface MarimoBridgeSettings {
 	defaultEmbedHeight: number;
 	/** Enable file explorer context menu options (e.g. "Create new marimo notebook"). */
 	showContextMenu: boolean;
+	/** Add "Open in marimo" to .md files in the file explorer (requires a marimo Markdown integration). */
+	showMarkdownContextMenu: boolean;
 	/** Custom API token for authentication. Empty => auto-generated session token. */
 	apiToken: string;
 }
@@ -99,6 +104,7 @@ export const DEFAULT_SETTINGS: MarimoBridgeSettings = {
 	defaultEmbedMode: DEFAULT_EMBED_MODE,
 	defaultEmbedHeight: DEFAULT_EMBED_HEIGHT,
 	showContextMenu: DEFAULT_SHOW_CONTEXT_MENU,
+	showMarkdownContextMenu: DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU,
 	apiToken: DEFAULT_API_TOKEN,
 };
 
@@ -324,6 +330,18 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.showContextMenu)
 					.onChange(async (value) => {
 						this.plugin.settings.showContextMenu = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName(SETTING_MD_CONTEXT_MENU_NAME)
+			.setDesc(SETTING_MD_CONTEXT_MENU_DESC)
+			.addToggle((t) =>
+				t
+					.setValue(this.plugin.settings.showMarkdownContextMenu)
+					.onChange(async (value) => {
+						this.plugin.settings.showMarkdownContextMenu = value;
 						await this.plugin.saveSettings();
 					})
 			);
