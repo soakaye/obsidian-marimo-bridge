@@ -210,6 +210,25 @@ The entry point is `src/main.ts`; the bundle is produced by
 `npm version <patch|minor|major>` runs `version-bump.mjs` to keep
 `manifest.json` and `versions.json` in sync.
 
+### Obsidian CLI for desktop testing
+
+Desktop integration tests and manual plugin validation use the
+[Obsidian CLI](https://help.obsidian.md/cli). Install an Obsidian version that
+supports the CLI, then enable it before testing:
+
+1. Open Obsidian and go to **Settings → General**.
+2. Enable **Command line interface**.
+3. Follow the prompt to register the `obsidian` command.
+4. Keep Obsidian running while executing CLI-based tests.
+
+Verify the development environment with:
+
+```bash
+obsidian version
+obsidian plugin:reload id=marimo-bridge
+obsidian dev:errors
+```
+
 ---
 
 ## License
