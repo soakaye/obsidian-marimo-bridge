@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Optional *Open in marimo* file-explorer context-menu entry for Markdown
+  (`.md`) files. The new *Open Markdown files in marimo* setting is off by
+  default and requires a compatible marimo Markdown integration such as
+  `mkdocs-marimo` or `quarto-marimo`. (spec:
+  `016-markdown-open-in-marimo`)
 - Reliable termination of self-spawned marimo servers on exit. The plugin now
   persists a record (PID/port/kind) of every server it starts to a plugin-dir
   file and, on a full Obsidian quit, synchronously signals them via a

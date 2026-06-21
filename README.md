@@ -3,7 +3,8 @@
 <a href="https://www.buymeacoffee.com/soakage" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
 View and edit [marimo](https://marimo.io/) notebooks (`.py` files) directly
-inside [Obsidian](https://obsidian.md/).
+inside [Obsidian](https://obsidian.md/). Markdown (`.md`) notebooks can also be
+opened when a compatible marimo Markdown integration is installed.
 
 marimo notebooks are plain Python files and marimo's editor is a local web app.
 This plugin starts and manages a local marimo server for you and embeds its UI
@@ -19,6 +20,9 @@ notes. Edits are written straight back to the real `.py` file on disk.
 
 - **Full notebook editing** — open a `.py` notebook in a dedicated tab with
   marimo's reactive editor. Saves go straight to the file.
+- **Optional Markdown notebook support** — add *Open in marimo* to the
+  right-click menu for `.md` files when using a marimo Markdown integration
+  such as `mkdocs-marimo` or `quarto-marimo`.
 - **Inline embeds** — drop a notebook into any note with a ` ```marimo ` block,
   in either editable or read-only "app" mode.
 - **Automatic server management** — the marimo edit server starts when Obsidian
@@ -59,6 +63,10 @@ notes. Edits are written straight back to the real `.py` file on disk.
 
 A virtual environment inside the vault (e.g. `<vault>/.venv`) is auto-detected.
 
+Opening `.md` files as notebooks additionally requires a compatible marimo
+Markdown integration, such as `mkdocs-marimo` or `quarto-marimo`, installed in
+the same environment as marimo.
+
 ---
 
 ## Installation
@@ -98,6 +106,9 @@ it updated from GitHub releases.
   - `Restart marimo server`
 - **Ribbon icon** (notebook) — opens the marimo home page.
 - **Right-click a `.py` file** → *Open in marimo*.
+- **Right-click a `.md` file** → *Open in marimo* (when *Open Markdown files in
+  marimo* is enabled and a compatible marimo Markdown integration is
+  installed).
 - **Right-click a file or folder** → *Create new marimo notebook* (when the
   *Enable file explorer context menu* setting is on).
 
@@ -136,6 +147,7 @@ back to the defaults configured in settings.
 | **Open .py files in marimo by default** | `on` | Turn off to keep `.py` as plain text and open via command / menu. Takes effect after reloading the plugin. |
 | **Default embed mode / height** | `edit` / `600` | Defaults for ` ```marimo ` blocks. |
 | **Enable file explorer context menu** | `on` | Show the *Create new marimo notebook* item when right-clicking files and folders. |
+| **Open Markdown files in marimo** | `off` | Show *Open in marimo* when right-clicking `.md` files. Requires a compatible marimo Markdown integration such as `mkdocs-marimo` or `quarto-marimo`. |
 | **API token** | *(auto-generated)* | Token the servers authenticate with (`--token-password`). Leave empty for a secure random per-session token. Changing it requires restarting the server. |
 
 ### Resolution order
