@@ -19,6 +19,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Fixed run-mode server reference accounting for concurrent embeds. Matching
+  embeds now share one startup while each owns an independent lease; the server
+  stops only after the final embed unloads, including unload-during-startup.
+- Fixed capped webview recovery so exhausting reload attempts displays an
+  explanatory failure instead of leaving a blank pane.
+- Restored the 1000-attempt limit for generated notebook names and abort with a
+  notice when every candidate is occupied.
+- Restored incompatible edit-port eviction and prevented a spawn when the port
+  cannot be released.
 - Blank marimo view after an Obsidian restart: a restored tab whose embedded
   `<webview>` attached but never finished loading (no `dom-ready`) now recovers
   automatically via a readiness watchdog that reloads it (capped retries),
@@ -37,6 +46,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The marimo bind host is now permanently fixed to `127.0.0.1`; the Host setting
+  was removed and legacy persisted values are ignored.
+- Runtime string and non-zero numeric literal externalization is enforced by an
+  AST-based regression test.
 - Edit-server adoption is token-aware, matching constitution v2.0.0 Principle IV
   (servers run headless **with** token validation, bound to `127.0.0.1`).
 

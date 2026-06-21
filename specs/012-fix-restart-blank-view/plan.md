@@ -25,7 +25,7 @@ Technical approach (already implemented in the working tree):
 
 **Storage**: N/A (plugin settings persist via Obsidian `loadData`/`saveData`; no change here).
 
-**Testing**: Manual validation via Obsidian developer console (`npm run build`, reload plugin, inspect console + webview). No automated test harness exists in the repo; quickstart.md documents the manual procedure.
+**Testing**: Automated regression coverage runs through `npm test`, including capped webview failure rendering and edit-port conflict handling. Manual restart validation remains documented in `quickstart.md`, with `npm run build` and `npm run lint` as static gates.
 
 **Target Platform**: Obsidian Desktop (macOS/Windows/Linux); desktop-only by Constitution Principle II.
 
@@ -33,7 +33,7 @@ Technical approach (already implemented in the working tree):
 
 **Performance Goals**: Restored marimo tab visibly renders within ~5s of workspace restore; watchdog interval is a few seconds so recovery is near-imperceptible.
 
-**Constraints**: Electron strips `<webview>` preload and forces sandbox/no-node-integration, so the guest can only be controlled via `executeJavaScript` and observed via `console-message` (see existing `INJECTION_SCRIPT`). Recovery must therefore be driven from host-side webview events (`dom-ready`, `did-fail-load`) and `reload()`. Bind strictly to the configured loopback host/port.
+**Constraints**: Electron strips `<webview>` preload and forces sandbox/no-node-integration, so the guest can only be controlled via `executeJavaScript` and observed via `console-message` (see existing `INJECTION_SCRIPT`). Recovery must therefore be driven from host-side webview events (`dom-ready`, `did-fail-load`) and `reload()`. Bind strictly to the fixed `127.0.0.1` host.
 
 **Scale/Scope**: Localized change across 3 existing source files; no new modules, no schema changes, no UI surface added.
 

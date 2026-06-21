@@ -7,7 +7,6 @@
 
 // Settings Defaults
 export const DEFAULT_PORT = 2718;
-export const DEFAULT_HOST = "127.0.0.1";
 export const DEFAULT_AUTO_START = true;
 export const DEFAULT_STARTUP_TIMEOUT = 30;
 export const DEFAULT_TAKE_OVER_PY_EXTENSION = true;
@@ -20,6 +19,7 @@ export const DEFAULT_API_TOKEN = "";
 export const NOTICE_TIMEOUT_MS = 8000;
 export const PIP_INSTALL_TIMEOUT_MS = 180000;
 export const SLEEP_DELAY_MS = 500;
+export const MAX_NOTEBOOK_NAME_ATTEMPTS = 1000;
 
 // Commands & Icons / Views
 export const ICON_MARIMO_LOGO = "marimo-logo";
@@ -43,7 +43,6 @@ export const SETTING_MARIMO_PATH_NAME = "marimo executable path";
 export const SETTING_PYTHON_PATH_NAME = "Python interpreter path";
 export const SETTING_MARIMO_INSTALL_NAME = "marimo installation";
 export const SETTING_PORT_NAME = "Port";
-export const SETTING_HOST_NAME = "Host";
 export const SETTING_AUTO_START_NAME = "Auto-start server on load";
 export const SETTING_TIMEOUT_NAME = "Startup timeout (seconds)";
 export const SETTING_TAKEOVER_NAME = "Open .py files in marimo by default";
@@ -70,6 +69,8 @@ export const TEXT_CHECKING = "Checking…";
 export const TEXT_INSTALLING = "Installing…";
 export const TEXT_REINSTALL = "Reinstall / upgrade";
 export const TEXT_INSTALL = "Install marimo";
+export const TEXT_NOTEBOOK_NAME_EXHAUSTED = "Could not create a marimo notebook because the first 1000 names are already in use.";
+export const TEXT_WEBVIEW_LOAD_FAILED = "marimo server is not available. Check the marimo path in settings, then reopen.";
 export const CLS_BRIDGE_VIEW = "marimo-bridge-view";
 export const CLS_LOADING = "marimo-bridge-loading";
 export const CLS_WEBVIEW = "marimo-bridge-webview";
@@ -272,7 +273,6 @@ export const SVG_MARIMO_LOGO = '<g transform="scale(0.083333)"><path fill="none"
 export const SETTING_MARIMO_PATH_DESC = "Absolute path to marimo (e.g. {marimoExample}). Leave empty to auto-detect under <vault>/.venv.";
 export const SETTING_PYTHON_PATH_DESC = "Absolute path to the Python interpreter (e.g. {pythonExample}). Used to install marimo and to run `python -m marimo`. Leave empty to auto-detect under <vault>/.venv.";
 export const SETTING_PORT_DESC = "Port for the marimo edit server.";
-export const SETTING_HOST_DESC = "Bind address. Keep 127.0.0.1 for local-only access.";
 export const SETTING_AUTO_START_DESC = "Launch the marimo edit server when Obsidian starts.";
 export const SETTING_TAKEOVER_DESC = "When on, clicking a .py file opens the marimo editor. Turn off to keep .py as plain text and use the command / context menu instead. Change takes effect after reloading the plugin.";
 export const SETTING_EMBED_MODE_DESC = "Mode for ```marimo blocks when not specified.";
@@ -282,3 +282,198 @@ export const TEXT_EMBED_MODE_RUN = "Run (read-only app)";
 export const TEXT_NOT_INSTALLED_ERROR = "Marimo is not installed. Install it from the marimo bridge settings.";
 export const TEXT_VENV_BROKEN_ERROR = "The vault's marimo virtual environment (.venv) is broken: its Python interpreter is missing (often after a Homebrew/pyenv upgrade). Recreate .venv and reinstall marimo, or set a marimo path in settings.";
 export const TEXT_VENV_BROKEN_HINT = "The existing .venv is broken (its Python is missing); it will be bypassed.";
+
+// Remaining runtime literals centralized for Constitution Principle VI.
+export const RUNTIME_CONSTANTS = {
+	SLASH: "/",
+	PARENT_PATH: "..",
+	EXTENSION_PY: "py",
+	MARKDOWN_BLOCK_MARIMO: "marimo",
+	EVENT_FILE_MENU: "file-menu",
+	EVENT_BEFORE_UNLOAD: "beforeunload",
+	EVENT_UNLOAD: "unload",
+	EVENT_BLUR: "blur",
+	EVENT_DATA: "data",
+	EVENT_ERROR: "error",
+	EVENT_CLOSE: "close",
+	EVENT_EXIT: "exit",
+	EVENT_LISTENING: "listening",
+	ELECTRON_MODULE: "electron",
+	TAG_WEBVIEW: "webview",
+	CSS_HEIGHT: "height",
+	CSS_PX: "px",
+	PARTITION_SHARED: "shared",
+	ENCODING_HEX: "hex",
+	PROCESS_ERROR_PERMISSION: "EPERM",
+	TYPE_OBJECT: "object",
+	TYPE_NUMBER: "number",
+	TYPE_STRING: "string",
+	PLACEHOLDER_MARIMO_EXAMPLE: "{marimoExample}",
+	PLACEHOLDER_PYTHON_EXAMPLE: "{pythonExample}",
+	FILE_UNTITLED_MARIMO: "untitled_marimo.py",
+	FILE_UNTITLED_MARIMO_PREFIX: "untitled_marimo_",
+	NOTICE_LOCAL_VAULT_REQUIRED: "Marimo bridge requires a local vault (desktop). Disabling.",
+	NOTICE_RESTARTING_SERVER: "Restarting marimo server…",
+	NOTICE_MARIMO_NOT_INSTALLED: "Marimo bridge: marimo is not installed, so the server was not started. Install it from the plugin settings.",
+	NOTICE_INSTALLING_MARIMO: "Installing marimo… this may take a minute.",
+	NOTICE_PORT_CONFLICT_SUFFIX: " is already in use and could not be released. Change the marimo bridge port or stop that process manually.",
+	TITLE_OPEN_IN_MARIMO: "Open in marimo",
+	TEXT_STARTING_SERVER: "Starting marimo server...",
+	LOG_RENDER_ERROR: "[MarimoBridge] render error:",
+	LOG_UNSAFE_PROTOCOL: "[MarimoBridge] Blocked external navigation to unsafe protocol:",
+	LOG_LINK_PARSE_FAILED: "Failed to parse link URL:",
+	LOG_INJECTION_FAILED: "[MarimoBridge] Failed to inject interception script:",
+	LOG_WEBVIEW_RELOAD_FAILED: "[MarimoBridge] webview reload failed:",
+	LOG_NO_DOM_READY: "no dom-ready",
+	LOG_RELATIVE_URL_FAILED: "[MarimoBridge] Failed to resolve relative URL:",
+	LOG_AUTH_RETRY: "[MarimoBridge] Landed on login page, retrying with token. Attempt:",
+	LOG_AUTH_LIMIT: "[MarimoBridge] Auth retry limit reached. Showing login page.",
+	LOG_NAVIGATE_PARSE_FAILED: "[MarimoBridge] Failed to parse did-navigate URL:",
+	LOG_OPEN_MESSAGE_PARSE_FAILED: "[MarimoBridge] Failed to parse open message:",
+	LOG_PIP_INSTALL_FAILED: "[marimo-bridge] pip install failed:",
+	LOG_EDIT_SERVER_EXCEPTION: "[MarimoBridge] Exception in ensureEditServer:",
+	LOG_RECORD_WRITE_FAILED: "[MarimoBridge] Failed to write server records:",
+	TEXT_TIMEOUT_SUFFIX: "\n[timeout]",
+	TEXT_INSTALLED: "installed",
+	HTTP_ROOT: "/",
+	CMD_NETSTAT_LISTENERS: "netstat -ano -p tcp",
+	TOKEN_BYTES: 16,
+	EXIT_CODE_FAILURE: -1,
+	HTTP_STATUS_OK: 200,
+	HTTP_REDIRECT_MIN: 300,
+	HTTP_REDIRECT_MAX_EXCLUSIVE: 400,
+	AUTH_TIMEOUT_MULTIPLIER: 6,
+	CONSOLE_LEVEL_ERROR: 2,
+	CONSOLE_LEVEL_WARNING: 1,
+	NETSTAT_PORT_GROUP: 1,
+	NETSTAT_PID_GROUP: 2,
+} as const;
+
+export function formatClassSelector(className: string): string {
+	return `.${className}`;
+}
+
+export function formatWebviewReloadLog(
+	reason: string,
+	attempt: number,
+	maxAttempts: number
+): string {
+	return `[MarimoBridge] webview not ready (${reason}); reloading, attempt ${attempt.toString()}/${maxAttempts.toString()}`;
+}
+
+export function formatDidFailLoadReason(errorCode: number | undefined): string {
+	return `did-fail-load ${String(errorCode)}`;
+}
+
+export function formatWebviewConsoleLog(
+	message: string,
+	sourceId: string,
+	line: number
+): string {
+	return `[MarimoWebviewConsole] ${message} (${sourceId}:${line.toString()})`;
+}
+
+export function formatMarimoInstallSuccess(version: string | null): string {
+	return `marimo installed${version ? ` (${version})` : ""}.`;
+}
+
+export function formatMarimoInstallFailure(code: number | null): string {
+	return `marimo install failed (exit ${String(code)}). Check the console.`;
+}
+
+export function formatServerBaseUrl(port: number): string {
+	return `${SCHEME_HTTP}${HOST_LOOPBACK}:${port.toString()}`;
+}
+
+export function formatServerFileUrl(
+	baseUrl: string,
+	vaultRelativePath: string,
+	token: string
+): string {
+	return `${baseUrl}${QUERY_FILE}${encodeURIComponent(vaultRelativePath)}&${ACCESS_TOKEN_KEY}=${encodeURIComponent(token)}`;
+}
+
+export function formatServerRootUrl(baseUrl: string, token: string): string {
+	return `${baseUrl}/?${ACCESS_TOKEN_KEY}=${encodeURIComponent(token)}`;
+}
+
+export function formatServerHealthUrl(port: number): string {
+	return `${formatServerBaseUrl(port)}${PATH_HEALTH}`;
+}
+
+export function formatAccessTokenPath(token: string): string {
+	return `/?${ACCESS_TOKEN_KEY}=${encodeURIComponent(token)}`;
+}
+
+export function formatLsofCommand(port: number): string {
+	return `lsof -ti tcp:${port.toString()} -sTCP:LISTEN`;
+}
+
+export function formatPortConflictNotice(port: number): string {
+	return `Port ${port.toString()}${RUNTIME_CONSTANTS.NOTICE_PORT_CONFLICT_SUFFIX}`;
+}
+
+export function formatServerReadyNotice(port: number): string {
+	return `marimo server ready on :${port.toString()}`;
+}
+
+export function formatServerTimeoutNotice(timeoutSeconds: number): string {
+	return `marimo server did not become ready within ${timeoutSeconds.toString()}s. Check the marimo path in settings.`;
+}
+
+export function formatServerOutputLog(
+	kind: string,
+	port: number,
+	output: string
+): string {
+	return `[marimo:${kind}:${port.toString()}] ${output}`;
+}
+
+export function formatServerExitLog(
+	kind: string,
+	port: number,
+	code: number | null
+): string {
+	return `[marimo:${kind}:${port.toString()}] exited (${String(code)})`;
+}
+
+export function formatServerSpawnErrorLog(kind: string, port: number): string {
+	return `[marimo:${kind}:${port.toString()}] spawn error`;
+}
+
+export function formatServerSpawnErrorNotice(message: string): string {
+	return `marimo failed to start: ${message}. Check the marimo path in settings.`;
+}
+
+export function formatTaskkillCommand(pid: number): string {
+	return `taskkill /PID ${pid.toString()} /T /F`;
+}
+
+export function formatOrphanReconciledLog(pid: number, port: number): string {
+	return `[MarimoBridge] Reconciled orphaned marimo server from a prior session (pid ${pid.toString()}, :${port.toString()}).`;
+}
+
+export function formatVaultExecutablePath(
+	scriptsDirectory: string,
+	executable: string
+): string {
+	return `${DIR_VENV}/${scriptsDirectory}/${executable}`;
+}
+
+export function formatInstalledDescription(
+	version: string,
+	pythonPath: string
+): string {
+	return `Installed: marimo ${version} (Python: ${pythonPath})`;
+}
+
+export function formatBrokenEnvironmentHint(hint: string): string {
+	return `${hint} `;
+}
+
+export function formatNotInstalledDescription(
+	brokenHint: string,
+	pythonPath: string
+): string {
+	return `Not installed. ${brokenHint}Will install into: ${pythonPath} -m pip install marimo`;
+}

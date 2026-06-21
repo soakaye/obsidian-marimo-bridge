@@ -19,6 +19,7 @@ server and embedding its web UI in an Electron `<webview>`.
 npm install
 npm run dev     # esbuild watch
 npm run build   # tsc type-check + production bundle
+npm test        # Node built-in regression suite
 npm run lint    # eslint (flat config, eslint-plugin-obsidianmd)
 ```
 
@@ -35,5 +36,5 @@ npm run lint    # eslint (flat config, eslint-plugin-obsidianmd)
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
+at specs/014-manage-run-servers/plan.md
 <!-- SPECKIT END -->
-

@@ -50,6 +50,12 @@ import {
 	CMD_RESTART_SERVER_NAME,
 	NOTICE_TIMEOUT_MS,
 	FILE_SERVER_RECORDS,
+	MAX_NOTEBOOK_NAME_ATTEMPTS,
+	TEXT_NOTEBOOK_NAME_EXHAUSTED,
+	FILE_NEW,
+	LEAF_TAB,
+	EXT_PY,
+	RUNTIME_CONSTANTS,
 } from "./constants";
 
 /**
@@ -79,7 +85,7 @@ export default class MarimoBridgePlugin extends Plugin {
 		const adapter = this.app.vault.adapter;
 		if (!(adapter instanceof FileSystemAdapter)) {
 			new Notice(
-				"Marimo bridge requires a local vault (desktop). Disabling."
+				RUNTIME_CONSTANTS.NOTICE_LOCAL_VAULT_REQUIRED
 			);
 			return;
 		}
@@ -113,12 +119,15 @@ export default class MarimoBridgePlugin extends Plugin {
 		// Optionally make `.py` open in the marimo editor by default. Obsidian
 		// delivers the opened file to the view via its view state ({ file }).
 		if (this.settings.takeOverPyExtension) {
-			this.registerExtensions(["py"], VIEW_TYPE_MARIMO);
+			this.registerExtensions(
+				[RUNTIME_CONSTANTS.EXTENSION_PY],
+				VIEW_TYPE_MARIMO
+			);
 		}
 
 		// Inline embeds: ```marimo code blocks become <webview>s.
 		this.registerMarkdownCodeBlockProcessor(
-			"marimo",
+			RUNTIME_CONSTANTS.MARKDOWN_BLOCK_MARIMO,
 			createMarimoEmbedProcessor(this)
 		);
 
@@ -139,7 +148,7 @@ export default class MarimoBridgePlugin extends Plugin {
 			name: CMD_OPEN_ACTIVE_FILE_NAME,
 			checkCallback: (checking) => {
 				const file = this.app.workspace.getActiveFile();
-				const isPy = file?.extension === "py";
+				const isPy = file?.extension === RUNTIME_CONSTANTS.EXTENSION_PY;
 				if (checking) return isPy;
 				if (file) void this.openMarimo(file.path);
 				return true;
@@ -156,39 +165,51 @@ export default class MarimoBridgePlugin extends Plugin {
 			id: CMD_RESTART_SERVER_ID,
 			name: CMD_RESTART_SERVER_NAME,
 			callback: async () => {
-				new Notice("Restarting marimo server…");
+				new Notice(RUNTIME_CONSTANTS.NOTICE_RESTARTING_SERVER);
 				await this.servers.restartEditServer();
 			},
 		});
 
 		// Right-click → "Open in marimo" on `.py` files in the file explorer.
 		this.registerEvent(
-			this.app.workspace.on("file-menu", (menu, file) => {
-				if (file instanceof TFile && file.extension === "py") {
-					menu.addItem((item) =>
-						item
-							.setTitle("Open in marimo")
-							.setIcon(ICON_MARIMO_LOGO)
-							.onClick(() => void this.openMarimo(file.path))
-					);
+			this.app.workspace.on(
+				RUNTIME_CONSTANTS.EVENT_FILE_MENU,
+				(menu, file) => {
+					if (
+						file instanceof TFile &&
+						file.extension === RUNTIME_CONSTANTS.EXTENSION_PY
+					) {
+						menu.addItem((item) =>
+							item
+								.setTitle(RUNTIME_CONSTANTS.TITLE_OPEN_IN_MARIMO)
+								.setIcon(ICON_MARIMO_LOGO)
+								.onClick(() => void this.openMarimo(file.path))
+						);
+					}
 				}
-			})
+			)
 		);
 
 		// Right-click → "Create new marimo notebook" in the file explorer.
 		this.registerEvent(
-			this.app.workspace.on("file-menu", (menu, file) => {
-				if (!this.settings.showContextMenu) return;
-				menu.addItem((item) =>
-					item
-						.setTitle("Create new marimo notebook")
-						.setIcon(ICON_MARIMO_LOGO)
-						.onClick(() => {
-							const folderPath = file instanceof TFolder ? file.path : (file.parent?.path ?? "");
-							void this.createNotebook(folderPath);
-						})
-				);
-			})
+			this.app.workspace.on(
+				RUNTIME_CONSTANTS.EVENT_FILE_MENU,
+				(menu, file) => {
+					if (!this.settings.showContextMenu) return;
+					menu.addItem((item) =>
+						item
+							.setTitle(CMD_CREATE_NOTEBOOK_NAME)
+							.setIcon(ICON_MARIMO_LOGO)
+							.onClick(() => {
+								const folderPath =
+									file instanceof TFolder
+										? file.path
+										: (file.parent?.path ?? "");
+								void this.createNotebook(folderPath);
+							})
+					);
+				}
+			)
 		);
 
 		this.addSettingTab(new MarimoBridgeSettingTab(this.app, this));
@@ -199,10 +220,10 @@ export default class MarimoBridgePlugin extends Plugin {
 		// anything that slips through is reconciled on the next launch. We listen
 		// on both `beforeunload` and `unload` because neither fires reliably across
 		// all quit paths; `stopAllSync` is idempotent, so a double-fire is a no-op.
-		this.registerDomEvent(window, "beforeunload", () => {
+		this.registerDomEvent(window, RUNTIME_CONSTANTS.EVENT_BEFORE_UNLOAD, () => {
 			this.servers.stopAllSync();
 		});
-		this.registerDomEvent(window, "unload", () => {
+		this.registerDomEvent(window, RUNTIME_CONSTANTS.EVENT_UNLOAD, () => {
 			this.servers.stopAllSync();
 		});
 
@@ -219,7 +240,7 @@ export default class MarimoBridgePlugin extends Plugin {
 				await this.servers.ensureEditServer();
 			} else {
 				new Notice(
-					"Marimo bridge: marimo is not installed, so the server was not started. Install it from the plugin settings.",
+						RUNTIME_CONSTANTS.NOTICE_MARIMO_NOT_INSTALLED,
 					NOTICE_TIMEOUT_MS
 				);
 			}
@@ -244,13 +265,15 @@ export default class MarimoBridgePlugin extends Plugin {
 		openInNewTab = true,
 		active = true
 	): Promise<void> {
-		if (file === "__new__" || file?.startsWith("__new__")) {
+		if (file === FILE_NEW || file?.startsWith(FILE_NEW)) {
 			const folder = this.app.workspace.getActiveFile()?.parent?.path ?? "";
-			file = await this.createUntitledNotebook(folder);
+			const created = await this.createUntitledNotebook(folder);
+			if (!created) return;
+			file = created;
 		}
 
 		const leaf = openInNewTab
-			? this.app.workspace.getLeaf("tab")
+			? this.app.workspace.getLeaf(LEAF_TAB)
 			: this.app.workspace.getMostRecentLeaf();
 		if (!leaf) return;
 		await leaf.setViewState({
@@ -271,6 +294,7 @@ export default class MarimoBridgePlugin extends Plugin {
 	private async createNotebook(folderPath?: string): Promise<void> {
 		const folder = folderPath ?? this.app.workspace.getActiveFile()?.parent?.path ?? "";
 		const target = await this.createUntitledNotebook(folder);
+		if (!target) return;
 		await this.openMarimo(target);
 	}
 
@@ -279,30 +303,39 @@ export default class MarimoBridgePlugin extends Plugin {
 	 * for the vault root), picking the first non-colliding name, and return its
 	 * vault-relative path. Does not open it.
 	 */
-	private async createUntitledNotebook(folder: string): Promise<string> {
-		let name = "untitled_marimo.py";
-		let target = normalizePath(folder ? `${folder}/${name}` : name);
-		let i = 1;
-		while (this.app.vault.getAbstractFileByPath(target)) {
-			name = `untitled_marimo_${(i++).toString()}.py`;
-			target = normalizePath(folder ? `${folder}/${name}` : name);
+	private async createUntitledNotebook(folder: string): Promise<string | null> {
+		for (let i = 0; i < MAX_NOTEBOOK_NAME_ATTEMPTS; i++) {
+			const name =
+				i === 0
+					? RUNTIME_CONSTANTS.FILE_UNTITLED_MARIMO
+					: `${RUNTIME_CONSTANTS.FILE_UNTITLED_MARIMO_PREFIX}${i.toString()}${EXT_PY}`;
+			const target = normalizePath(
+				folder ? [folder, name].join(RUNTIME_CONSTANTS.SLASH) : name
+			);
+			if (this.app.vault.getAbstractFileByPath(target)) continue;
+			await this.app.vault.create(target, NEW_NOTEBOOK_TEMPLATE);
+			return target;
 		}
-		await this.app.vault.create(target, NEW_NOTEBOOK_TEMPLATE);
-		return target;
+		new Notice(TEXT_NOTEBOOK_NAME_EXHAUSTED, NOTICE_TIMEOUT_MS);
+		return null;
 	}
 
 	async loadSettings(): Promise<void> {
+		const stored = (await this.loadData()) as Partial<MarimoBridgeSettings> & {
+			host?: unknown;
+		};
+		delete stored.host;
 		this.settings = Object.assign(
 			{},
 			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<MarimoBridgeSettings>
+			stored
 		);
 	}
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 		// Re-evaluate executable availability and stop managed servers when a
-		// process-affecting setting (path, host, port, or token) changed.
+		// process-affecting setting (path, port, or token) changed.
 		this.servers.invalidateAvailability();
 	}
 }

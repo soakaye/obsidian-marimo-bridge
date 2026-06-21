@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { EXT_PY, RUNTIME_CONSTANTS } from "./constants";
 
 export interface ResolvedVaultNotebook {
 	/** Stable, normalized Vault-relative key used for run-server deduplication. */
@@ -26,18 +27,18 @@ export function resolveVaultNotebook(
 		const realCandidate = fs.realpathSync(candidate);
 		const relative = path.relative(realVault, realCandidate);
 		const escapesVault =
-			relative === ".." ||
-			relative.startsWith(`..${path.sep}`) ||
+			relative === RUNTIME_CONSTANTS.PARENT_PATH ||
+			relative.startsWith(`${RUNTIME_CONSTANTS.PARENT_PATH}${path.sep}`) ||
 			path.isAbsolute(relative);
 		if (escapesVault) return null;
 
 		const stat = fs.statSync(realCandidate);
-		if (!stat.isFile() || path.extname(realCandidate).toLowerCase() !== ".py") {
+		if (!stat.isFile() || path.extname(realCandidate).toLowerCase() !== EXT_PY) {
 			return null;
 		}
 
 		return {
-			key: relative.split(path.sep).join("/"),
+			key: relative.split(path.sep).join(RUNTIME_CONSTANTS.SLASH),
 			absolutePath: realCandidate,
 		};
 	} catch {

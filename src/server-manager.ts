@@ -33,10 +33,7 @@ import {
 	PIP_INSTALL_TIMEOUT_MS,
 	SLEEP_DELAY_MS,
 	METHOD_GET,
-	PATH_HEALTH,
 	PATH_AUTH_LOGIN,
-	QUERY_FILE,
-	SCHEME_HTTP,
 	CMD_ARG_M,
 	CMD_ARG_PIP,
 	CMD_ARG_INSTALL,
@@ -52,7 +49,28 @@ import {
 	SIGNAL_PROBE,
 	RECONCILE_CONFIRM_TIMEOUT_MS,
 	PORT_MAX,
-	ACCESS_TOKEN_KEY
+	HOST_LOOPBACK,
+	RUNTIME_CONSTANTS,
+	OFFSET_ONE,
+	MODE_EDIT,
+	MODE_RUN,
+	formatMarimoInstallSuccess,
+	formatMarimoInstallFailure,
+	formatServerBaseUrl,
+	formatServerFileUrl,
+	formatServerRootUrl,
+	formatServerHealthUrl,
+	formatAccessTokenPath,
+	formatLsofCommand,
+	formatPortConflictNotice,
+	formatServerReadyNotice,
+	formatServerTimeoutNotice,
+	formatServerOutputLog,
+	formatServerExitLog,
+	formatServerSpawnErrorLog,
+	formatServerSpawnErrorNotice,
+	formatTaskkillCommand,
+	formatOrphanReconciledLog,
 } from "./constants";
 
 type ServerKind = "edit" | "run";
@@ -71,7 +89,6 @@ interface ServerConfigSnapshot {
 	pythonPath: string;
 	marimoPath: string;
 	port: number;
-	host: string;
 	apiToken: string;
 }
 
@@ -84,6 +101,8 @@ export class ServerManager {
 	private runServers = new Map<string, ManagedServer>();
 	/** Map of vault-relative notebook path → number of active embeds. */
 	private runServerRefs = new Map<string, number>();
+	/** Original embed path → canonical notebook key, retained for release after rename/delete. */
+	private runServerAliases = new Map<string, string>();
 	/** Next candidate port for a "run" server (incremented as ports are taken). */
 	private nextRunPort: number;
 	/** Cached marimo availability; `null` means "not checked yet". */
@@ -106,7 +125,7 @@ export class ServerManager {
 	) {
 		this.settings = settings;
 		this.vaultPath = adapter.getBasePath();
-		this.nextRunPort = settings.port + 1;
+		this.nextRunPort = settings.port + OFFSET_ONE;
 		this.records = new ServerRecordStore(recordsPath);
 		this.serverConfig = this.captureServerConfig();
 	}
@@ -116,7 +135,9 @@ export class ServerManager {
 		if (this.settings.apiToken && this.settings.apiToken.trim() !== "") {
 			return this.settings.apiToken.trim();
 		}
-		this.sessionToken ??= crypto.randomBytes(16).toString("hex");
+		this.sessionToken ??= crypto
+			.randomBytes(RUNTIME_CONSTANTS.TOKEN_BYTES)
+			.toString(RUNTIME_CONSTANTS.ENCODING_HEX);
 		return this.sessionToken;
 	}
 
@@ -237,20 +258,38 @@ export class ServerManager {
 					env: process.env,
 				});
 			} catch (e) {
-				resolve({ code: -1, stdout: "", stderr: String(e) });
+				resolve({
+					code: RUNTIME_CONSTANTS.EXIT_CODE_FAILURE,
+					stdout: "",
+					stderr: String(e),
+				});
 				return;
 			}
 			const timer = window.setTimeout(() => {
 				this.killProcess(proc);
-				resolve({ code: -1, stdout, stderr: stderr + "\n[timeout]" });
+				resolve({
+					code: RUNTIME_CONSTANTS.EXIT_CODE_FAILURE,
+					stdout,
+					stderr: stderr + RUNTIME_CONSTANTS.TEXT_TIMEOUT_SUFFIX,
+				});
 			}, timeoutMs);
-			proc.stdout?.on("data", (d: Buffer | string) => (stdout += d.toString()));
-			proc.stderr?.on("data", (d: Buffer | string) => (stderr += d.toString()));
-			proc.on("error", (err) => {
+			proc.stdout?.on(
+				RUNTIME_CONSTANTS.EVENT_DATA,
+				(d: Buffer | string) => (stdout += d.toString())
+			);
+			proc.stderr?.on(
+				RUNTIME_CONSTANTS.EVENT_DATA,
+				(d: Buffer | string) => (stderr += d.toString())
+			);
+			proc.on(RUNTIME_CONSTANTS.EVENT_ERROR, (err) => {
 				window.clearTimeout(timer);
-				resolve({ code: -1, stdout, stderr: stderr + String(err) });
+				resolve({
+					code: RUNTIME_CONSTANTS.EXIT_CODE_FAILURE,
+					stdout,
+					stderr: stderr + String(err),
+				});
 			});
-			proc.on("close", (code) => {
+			proc.on(RUNTIME_CONSTANTS.EVENT_CLOSE, (code) => {
 				window.clearTimeout(timer);
 				resolve({ code, stdout, stderr });
 			});
@@ -269,7 +308,10 @@ export class ServerManager {
 		// `marimo --version` prints e.g. "0.23.9"; be lenient about format.
 		const out = (stdout || stderr).trim();
 		const m = /(\d+\.\d+\.\d+\S*)/.exec(out);
-		return m?.[1] ?? (out || "installed");
+		return (
+			m?.[RUNTIME_CONSTANTS.NETSTAT_PORT_GROUP] ??
+			(out || RUNTIME_CONSTANTS.TEXT_INSTALLED)
+		);
 	}
 
 	/**
@@ -282,7 +324,7 @@ export class ServerManager {
 		if (!sameServerConfig(this.serverConfig, nextConfig)) {
 			const tokenChanged = this.serverConfig.apiToken !== nextConfig.apiToken;
 			this.stopAll();
-			this.nextRunPort = nextConfig.port + 1;
+			this.nextRunPort = nextConfig.port + OFFSET_ONE;
 			if (tokenChanged) this.sessionToken = null;
 			this.serverConfig = nextConfig;
 		}
@@ -298,7 +340,7 @@ export class ServerManager {
 	/** Install marimo into the resolved Python via `pip install marimo`. */
 	async installMarimo(): Promise<{ ok: boolean; message: string }> {
 		const python = this.resolvePython();
-		new Notice("Installing marimo… this may take a minute.");
+		new Notice(RUNTIME_CONSTANTS.NOTICE_INSTALLING_MARIMO);
 		const { code, stderr } = await this.runCapture(
 			python,
 			[CMD_ARG_M, CMD_ARG_PIP, CMD_ARG_INSTALL, CMD_MARIMO],
@@ -307,12 +349,12 @@ export class ServerManager {
 		this.available = null; // force re-detection next time
 		if (code === 0) {
 			const version = await this.getMarimoVersion();
-			const msg = `marimo installed${version ? ` (${version})` : ""}.`;
+			const msg = formatMarimoInstallSuccess(version);
 			new Notice(msg);
 			return { ok: true, message: msg };
 		}
-		const msg = `marimo install failed (exit ${String(code)}). Check the console.`;
-		console.error("[marimo-bridge] pip install failed:", stderr);
+		const msg = formatMarimoInstallFailure(code);
+		console.error(RUNTIME_CONSTANTS.LOG_PIP_INSTALL_FAILED, stderr);
 		new Notice(msg, NOTICE_TIMEOUT_MS);
 		return { ok: false, message: msg };
 	}
@@ -322,19 +364,21 @@ export class ServerManager {
 	// ---------------------------------------------------------------------
 
 	get editBaseUrl(): string {
-		return `${SCHEME_HTTP}${this.settings.host}:${this.settings.port.toString()}`;
+		return formatServerBaseUrl(this.settings.port);
 	}
 
 	/** URL that opens a specific notebook in the edit server. */
 	editFileUrl(vaultRelativePath: string): string {
-		return `${this.editBaseUrl}${QUERY_FILE}${encodeURIComponent(
-			vaultRelativePath
-		)}&${ACCESS_TOKEN_KEY}=${encodeURIComponent(this.getActiveToken())}`;
+		return formatServerFileUrl(
+			this.editBaseUrl,
+			vaultRelativePath,
+			this.getActiveToken()
+		);
 	}
 
 	/** URL of the edit server's home page (notebook browser). */
 	editHomeUrl(): string {
-		return `${this.editBaseUrl}/?${ACCESS_TOKEN_KEY}=${encodeURIComponent(this.getActiveToken())}`;
+		return formatServerRootUrl(this.editBaseUrl, this.getActiveToken());
 	}
 
 	// ---------------------------------------------------------------------
@@ -345,11 +389,11 @@ export class ServerManager {
 	private async healthOk(port: number): Promise<boolean> {
 		try {
 			const res = await requestUrl({
-				url: `${SCHEME_HTTP}${this.settings.host}:${port.toString()}${PATH_HEALTH}`,
+				url: formatServerHealthUrl(port),
 				method: METHOD_GET,
 				throw: false,
 			});
-			return res.status === 200;
+			return res.status === RUNTIME_CONSTANTS.HTTP_STATUS_OK;
 		} catch {
 			return false;
 		}
@@ -393,24 +437,29 @@ export class ServerManager {
 	private redirectsToLogin(port: number, token: string | null): Promise<boolean> {
 		return new Promise((resolve) => {
 			const path = token
-				? `/?${ACCESS_TOKEN_KEY}=${encodeURIComponent(token)}`
-				: "/";
+				? formatAccessTokenPath(token)
+				: RUNTIME_CONSTANTS.HTTP_ROOT;
 			const req = http.request(
-				{ host: this.settings.host, port, path, method: METHOD_GET },
+				{ host: HOST_LOOPBACK, port, path, method: METHOD_GET },
 				(res) => {
 					res.resume(); // drain so the socket can close
 					const status = res.statusCode ?? 0;
 					const location = res.headers.location ?? "";
 					resolve(
-						status >= 300 && status < 400 && location.includes(PATH_AUTH_LOGIN)
+						status >= RUNTIME_CONSTANTS.HTTP_REDIRECT_MIN &&
+						status < RUNTIME_CONSTANTS.HTTP_REDIRECT_MAX_EXCLUSIVE &&
+						location.includes(PATH_AUTH_LOGIN)
 					);
 				}
 			);
-			req.on("error", () => { resolve(false); });
-			req.setTimeout(SLEEP_DELAY_MS * 6, () => {
+			req.on(RUNTIME_CONSTANTS.EVENT_ERROR, () => { resolve(false); });
+			req.setTimeout(
+				SLEEP_DELAY_MS * RUNTIME_CONSTANTS.AUTH_TIMEOUT_MULTIPLIER,
+				() => {
 				req.destroy();
 				resolve(false);
-			});
+				}
+			);
 			req.end();
 		});
 	}
@@ -426,8 +475,8 @@ export class ServerManager {
 			// itself or unrelated processes. The Windows branch already filters
 			// for LISTENING below.
 			const cmd = isWin
-				? `netstat -ano -p tcp`
-				: `lsof -ti tcp:${port.toString()} -sTCP:LISTEN`;
+				? RUNTIME_CONSTANTS.CMD_NETSTAT_LISTENERS
+				: formatLsofCommand(port);
 			exec(cmd, (err, stdout) => {
 				if (!stdout) {
 					resolve([]);
@@ -443,8 +492,11 @@ export class ServerManager {
 						// unrelated PID.
 						const m =
 							/^\s*TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)/.exec(line);
-						if (m && Number(m[1]) === port) {
-							const n = Number(m[2]);
+						if (
+							m &&
+							Number(m[RUNTIME_CONSTANTS.NETSTAT_PORT_GROUP]) === port
+						) {
+							const n = Number(m[RUNTIME_CONSTANTS.NETSTAT_PID_GROUP]);
 							if (Number.isInteger(n) && n > 0) pids.add(n);
 						}
 					} else {
@@ -455,6 +507,36 @@ export class ServerManager {
 				resolve([...pids]);
 			});
 		});
+	}
+
+	/** Terminate every process listening on `port` and report whether it was found. */
+	private async killPort(port: number): Promise<boolean> {
+		const pids = await this.findPidsOnPort(port);
+		if (pids.length === 0) return false;
+		for (const pid of pids) {
+			this.killByPid(pid, false);
+		}
+		const deadline = Date.now() + RECONCILE_CONFIRM_TIMEOUT_MS;
+		while (Date.now() < deadline) {
+			if (await this.isPortFree(port)) return true;
+			await sleep(SLEEP_DELAY_MS);
+		}
+		return this.isPortFree(port);
+	}
+
+	private async resolveEditPort(
+		port: number
+	): Promise<ManagedServer | null | undefined> {
+		if (await this.isPortFree(port)) return undefined;
+		if (await this.healthOk(port) && await this.serverAcceptsOurAuth(port)) {
+			return { kind: MODE_EDIT, port, process: null, ready: true };
+		}
+		if (await this.killPort(port)) return undefined;
+		new Notice(
+			formatPortConflictNotice(port),
+			NOTICE_TIMEOUT_MS
+		);
+		return null;
 	}
 
 	/** Poll the health endpoint until it responds or the timeout elapses. */
@@ -478,25 +560,13 @@ export class ServerManager {
 			try {
 				const port = this.settings.port;
 
-				// Reuse a pre-existing server on this port (e.g. one we started before
-				// a reload, or one launched manually) — but only if it accepts our
-				// token. A leftover server with different auth (an old `--no-token`
-				// instance, or one expecting a now-stale session token) answers
-				// `/health` with 200 yet redirects our token URLs, rendering blank.
-				// Evict such a server and spawn a fresh one we control.
-				if (await this.healthOk(port)) {
-					if (await this.serverAcceptsOurAuth(port)) {
-						this.edit = { kind: "edit", port, process: null, ready: true };
-						return true;
-					}
-					console.warn(
-						`[MarimoBridge] Port ${port.toString()} is occupied by a server that does not accept this plugin's token. It will not be terminated.`
-					);
-					new Notice(
-						`Port ${port.toString()} is already in use by another server. Change the marimo bridge port or stop that server manually.`,
-						NOTICE_TIMEOUT_MS
-					);
-					return false;
+				// Reuse only a token-compatible server. Any other listener on the
+				// configured port is evicted before a fresh server is spawned.
+				const initialPortState = await this.resolveEditPort(port);
+				if (initialPortState === null) return false;
+				if (initialPortState) {
+					this.edit = initialPortState;
+					return true;
 				}
 
 				// Don't attempt to spawn if marimo isn't installed — fail fast instead
@@ -511,18 +581,17 @@ export class ServerManager {
 					return false;
 				}
 
-				// Final guard against a startup race: another caller (auto-start vs.
-				// a restored view/embed) may have brought the server up between our
-				// health check above and here. Adopt it instead of spawning a second
-				// process that would only fail with EADDRINUSE.
-				if (await this.healthOk(port) && await this.serverAcceptsOurAuth(port)) {
-					this.edit = { kind: "edit", port, process: null, ready: true };
+				// Final guard against a startup race after executable detection.
+				const finalPortState = await this.resolveEditPort(port);
+				if (finalPortState === null) return false;
+				if (finalPortState) {
+					this.edit = finalPortState;
 					return true;
 				}
 
-				const proc = this.spawnServer("edit", port);
+				const proc = this.spawnServer(MODE_EDIT, port);
 				const server: ManagedServer = {
-					kind: "edit",
+					kind: MODE_EDIT,
 					port,
 					process: proc,
 					ready: false,
@@ -533,18 +602,18 @@ export class ServerManager {
 				if (this.edit !== server) return false;
 				server.ready = ready;
 				if (ready) {
-					new Notice(`marimo server ready on :${port.toString()}`);
+					new Notice(formatServerReadyNotice(port));
 				} else {
 					this.edit = null;
 					this.killProcess(proc);
 					new Notice(
-						`marimo server did not become ready within ${this.settings.startupTimeout.toString()}s. Check the marimo path in settings.`,
+						formatServerTimeoutNotice(this.settings.startupTimeout),
 						NOTICE_TIMEOUT_MS
 					);
 				}
 				return ready;
 			} catch (e) {
-				console.error("[MarimoBridge] Exception in ensureEditServer:", e);
+				console.error(RUNTIME_CONSTANTS.LOG_EDIT_SERVER_EXCEPTION, e);
 				return false;
 			} finally {
 				this.editSpawning = null;
@@ -563,11 +632,12 @@ export class ServerManager {
 		if (this.reconcilePromise) await this.reconcilePromise;
 		const notebook = resolveVaultNotebook(this.vaultPath, vaultRelativePath);
 		if (!notebook) return null;
+		this.runServerAliases.set(vaultRelativePath, notebook.key);
 
 		const existing = this.runServers.get(notebook.key);
 		if (existing?.ready) {
 			const refs = this.runServerRefs.get(notebook.key) ?? 0;
-			this.runServerRefs.set(notebook.key, refs + 1);
+			this.runServerRefs.set(notebook.key, refs + OFFSET_ONE);
 			return this.runServerUrl(existing.port);
 		}
 		// Dedupe concurrent callers (e.g. two `mode: run` embeds of the same file
@@ -575,19 +645,29 @@ export class ServerManager {
 		// server still `ready === false`, spawn a SECOND process on a new port,
 		// and overwrite the map entry — orphaning (leaking) the first process.
 		const inFlight = this.runSpawning.get(notebook.key);
-		if (inFlight) return inFlight;
+		if (inFlight) {
+			try {
+				const url = await inFlight;
+				if (url) this.acquireRunServerReference(notebook.key);
+				else this.runServerAliases.delete(vaultRelativePath);
+				return url;
+			} catch (error) {
+				this.runServerAliases.delete(vaultRelativePath);
+				throw error;
+			}
+		}
 
 		const spawning = (async () => {
 			try {
 				const port = await this.allocateRunPort();
 				const proc = this.spawnServer(
-					"run",
+					MODE_RUN,
 					port,
 					notebook.absolutePath,
 					notebook.key
 				);
 				const server: ManagedServer = {
-					kind: "run",
+					kind: MODE_RUN,
 					port,
 					process: proc,
 					ready: false,
@@ -602,22 +682,34 @@ export class ServerManager {
 					this.killProcess(proc);
 					return null;
 				}
-				const refs = this.runServerRefs.get(notebook.key) ?? 0;
-				this.runServerRefs.set(notebook.key, refs + 1);
 				return this.runServerUrl(port);
 			} finally {
 				this.runSpawning.delete(notebook.key);
 			}
 		})();
 		this.runSpawning.set(notebook.key, spawning);
-		return spawning;
+		try {
+			const url = await spawning;
+			if (url) this.acquireRunServerReference(notebook.key);
+			else this.runServerAliases.delete(vaultRelativePath);
+			return url;
+		} catch (error) {
+			this.runServerAliases.delete(vaultRelativePath);
+			throw error;
+		}
+	}
+
+	private acquireRunServerReference(notebookKey: string): void {
+		const refs = this.runServerRefs.get(notebookKey) ?? 0;
+		this.runServerRefs.set(notebookKey, refs + OFFSET_ONE);
 	}
 
 	/** URL of a read-only "run" server, carrying the active token. */
 	private runServerUrl(port: number): string {
-		return `${SCHEME_HTTP}${this.settings.host}:${port.toString()}/?${ACCESS_TOKEN_KEY}=${encodeURIComponent(
+		return formatServerRootUrl(
+			formatServerBaseUrl(port),
 			this.getActiveToken()
-		)}`;
+		);
 	}
 
 	/**
@@ -633,19 +725,19 @@ export class ServerManager {
 		let p = this.nextRunPort;
 		while (p <= PORT_MAX && (used.has(p) || !(await this.isPortFree(p)))) p++;
 		if (p > PORT_MAX) p = this.nextRunPort; // exhausted; let marimo report it
-		this.nextRunPort = p + 1;
+		this.nextRunPort = p + OFFSET_ONE;
 		return p;
 	}
 
-	/** True if `port` can be bound on the configured host right now (best-effort). */
+	/** True if `port` can be bound on the loopback host right now (best-effort). */
 	private isPortFree(port: number): Promise<boolean> {
 		return new Promise((resolve) => {
 			const tester = net.createServer();
-			tester.once("error", () => { resolve(false); });
-			tester.once("listening", () => {
+			tester.once(RUNTIME_CONSTANTS.EVENT_ERROR, () => { resolve(false); });
+			tester.once(RUNTIME_CONSTANTS.EVENT_LISTENING, () => {
 				tester.close(() => { resolve(true); });
 			});
-			tester.listen(port, this.settings.host);
+			tester.listen(port, HOST_LOOPBACK);
 		});
 	}
 
@@ -658,7 +750,7 @@ export class ServerManager {
 	): ChildProcess {
 		const { cmd, prefixArgs } = this.resolveCommand();
 		const args = [...prefixArgs, kind];
-		if (kind === "run" && file) {
+		if (kind === MODE_RUN && file) {
 			args.push(file);
 		}
 		// --headless: don't open a browser; --token-password: authenticate.
@@ -669,7 +761,7 @@ export class ServerManager {
 			CMD_ARG_PORT,
 			String(port),
 			CMD_ARG_HOST,
-			this.settings.host
+			HOST_LOOPBACK
 		);
 
 		const isWin = process.platform === PLATFORM_WIN32;
@@ -692,36 +784,36 @@ export class ServerManager {
 			});
 		}
 
-		proc.stdout.on("data", (d: Buffer | string) => {
+		proc.stdout.on(RUNTIME_CONSTANTS.EVENT_DATA, (d: Buffer | string) => {
 			// eslint-disable-next-line obsidianmd/rule-custom-message
-			console.log(`[marimo:${kind}:${port.toString()}] ${d.toString().trim()}`);
+			console.log(formatServerOutputLog(kind, port, d.toString().trim()));
 		});
-		proc.stderr.on("data", (d: Buffer | string) => {
+		proc.stderr.on(RUNTIME_CONSTANTS.EVENT_DATA, (d: Buffer | string) => {
 			// eslint-disable-next-line obsidianmd/rule-custom-message
-			console.log(`[marimo:${kind}:${port.toString()}] ${d.toString().trim()}`);
+			console.log(formatServerOutputLog(kind, port, d.toString().trim()));
 		});
 		let finalized = false;
 		const finalize = () => {
 			if (finalized) return;
 			finalized = true;
 			if (proc.pid !== undefined) this.records.remove(proc.pid);
-			if (kind === "edit") {
+			if (kind === MODE_EDIT) {
 				if (this.edit?.process === proc) this.edit = null;
 			} else if (serverKey) {
 				const managed = this.runServers.get(serverKey);
 				if (managed?.process === proc) this.runServers.delete(serverKey);
 			}
 		};
-		proc.on("exit", (code) => {
+		proc.on(RUNTIME_CONSTANTS.EVENT_EXIT, (code) => {
 			// eslint-disable-next-line obsidianmd/rule-custom-message
-			console.log(`[marimo:${kind}:${port.toString()}] exited (${String(code)})`);
+			console.log(formatServerExitLog(kind, port, code));
 			finalize();
 		});
-		proc.on("close", finalize);
-		proc.on("error", (err) => {
-			console.error(`[marimo:${kind}:${port.toString()}] spawn error`, err);
+		proc.on(RUNTIME_CONSTANTS.EVENT_CLOSE, finalize);
+		proc.on(RUNTIME_CONSTANTS.EVENT_ERROR, (err) => {
+			console.error(formatServerSpawnErrorLog(kind, port), err);
 			new Notice(
-				`marimo failed to start: ${err.message}. Check the marimo path in settings.`,
+				formatServerSpawnErrorNotice(err.message),
 				NOTICE_TIMEOUT_MS
 			);
 		});
@@ -738,7 +830,7 @@ export class ServerManager {
 		if (proc?.pid === undefined) return;
 		const pid = proc.pid;
 		if (process.platform === PLATFORM_WIN32) {
-			exec(`taskkill /PID ${pid.toString()} /T /F`, () => {
+			exec(formatTaskkillCommand(pid), () => {
 				// No-op: ignore taskkill errors/output
 			});
 		} else {
@@ -759,7 +851,7 @@ export class ServerManager {
 	 */
 	private killByPid(pid: number, sync: boolean): void {
 		if (process.platform === PLATFORM_WIN32) {
-			const cmd = `taskkill /PID ${pid.toString()} /T /F`;
+			const cmd = formatTaskkillCommand(pid);
 			if (sync) {
 				try {
 					execSync(cmd, { windowsHide: true });
@@ -791,7 +883,10 @@ export class ServerManager {
 			return true;
 		} catch (e) {
 			// EPERM: it exists but we may not signal it — still "alive".
-			return (e as NodeJS.ErrnoException).code === "EPERM";
+			return (
+				(e as NodeJS.ErrnoException).code ===
+				RUNTIME_CONSTANTS.PROCESS_ERROR_PERMISSION
+			);
 		}
 	}
 
@@ -828,6 +923,7 @@ export class ServerManager {
 		}
 		this.runServers.clear();
 		this.runServerRefs.clear();
+		this.runServerAliases.clear();
 	}
 
 	/**
@@ -851,6 +947,7 @@ export class ServerManager {
 		this.edit = null;
 		this.runServers.clear();
 		this.runServerRefs.clear();
+		this.runServerAliases.clear();
 	}
 
 	/**
@@ -890,7 +987,7 @@ export class ServerManager {
 				if (ours) {
 					this.killByPid(r.pid, false);
 					console.warn(
-						`[MarimoBridge] Reconciled orphaned marimo server from a prior session (pid ${r.pid.toString()}, :${r.port.toString()}).`
+						formatOrphanReconciledLog(r.pid, r.port)
 					);
 					await this.waitForProcessExit(r.pid);
 					if (this.isProcessAlive(r.pid)) {
@@ -907,17 +1004,28 @@ export class ServerManager {
 	/** Decrement the reference count for a run server, terminating it if it is no longer referenced. */
 	async releaseRunServer(vaultRelativePath: string): Promise<void> {
 		const notebook = resolveVaultNotebook(this.vaultPath, vaultRelativePath);
-		if (!notebook) return;
-		const refs = this.runServerRefs.get(notebook.key) ?? 0;
-		if (refs <= 1) {
-			this.runServerRefs.delete(notebook.key);
-			const server = this.runServers.get(notebook.key);
+		const notebookKey =
+			notebook?.key ?? this.runServerAliases.get(vaultRelativePath);
+		if (!notebookKey) return;
+		const refs = this.runServerRefs.get(notebookKey) ?? 0;
+		if (refs <= OFFSET_ONE) {
+			this.runServerRefs.delete(notebookKey);
+			const server = this.runServers.get(notebookKey);
 			if (server) {
 				this.killProcess(server.process);
-				this.runServers.delete(notebook.key);
+				this.runServers.delete(notebookKey);
 			}
+			this.removeRunServerAliases(notebookKey);
 		} else {
-			this.runServerRefs.set(notebook.key, refs - 1);
+			this.runServerRefs.set(notebookKey, refs - OFFSET_ONE);
+		}
+	}
+
+	private removeRunServerAliases(notebookKey: string): void {
+		for (const [requestedPath, canonicalKey] of this.runServerAliases) {
+			if (canonicalKey === notebookKey) {
+				this.runServerAliases.delete(requestedPath);
+			}
 		}
 	}
 
@@ -934,7 +1042,6 @@ export class ServerManager {
 			pythonPath: this.settings.pythonPath,
 			marimoPath: this.settings.marimoPath,
 			port: this.settings.port,
-			host: this.settings.host,
 			apiToken: this.settings.apiToken,
 		};
 	}
@@ -953,7 +1060,6 @@ function sameServerConfig(
 		left.pythonPath === right.pythonPath &&
 		left.marimoPath === right.marimoPath &&
 		left.port === right.port &&
-		left.host === right.host &&
 		left.apiToken === right.apiToken
 	);
 }

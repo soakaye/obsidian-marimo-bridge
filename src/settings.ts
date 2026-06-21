@@ -11,7 +11,6 @@ import { App, ButtonComponent, PluginSettingTab, Setting } from "obsidian";
 import type MarimoBridgePlugin from "./main";
 import {
 	DEFAULT_PORT,
-	DEFAULT_HOST,
 	DEFAULT_AUTO_START,
 	DEFAULT_STARTUP_TIMEOUT,
 	DEFAULT_TAKE_OVER_PY_EXTENSION,
@@ -24,7 +23,6 @@ import {
 	SETTING_PYTHON_PATH_NAME,
 	SETTING_MARIMO_INSTALL_NAME,
 	SETTING_PORT_NAME,
-	SETTING_HOST_NAME,
 	SETTING_AUTO_START_NAME,
 	SETTING_TIMEOUT_NAME,
 	SETTING_TAKEOVER_NAME,
@@ -40,7 +38,6 @@ import {
 	TEXT_REINSTALL,
 	TEXT_INSTALL,
 	PLATFORM_WIN32,
-	DIR_VENV,
 	DIR_SCRIPTS_WIN,
 	DIR_SCRIPTS_UNIX,
 	EXE_MARIMO_WIN,
@@ -50,14 +47,23 @@ import {
 	SETTING_MARIMO_PATH_DESC,
 	SETTING_PYTHON_PATH_DESC,
 	SETTING_PORT_DESC,
-	SETTING_HOST_DESC,
 	SETTING_AUTO_START_DESC,
 	SETTING_TAKEOVER_DESC,
 	SETTING_EMBED_MODE_DESC,
 	SETTING_CONTEXT_MENU_DESC,
 	TEXT_EMBED_MODE_EDIT,
 	TEXT_EMBED_MODE_RUN,
-	TEXT_VENV_BROKEN_HINT
+	TEXT_VENV_BROKEN_HINT,
+	RUNTIME_CONSTANTS,
+	RADIX_DECIMAL,
+	PORT_MAX,
+	OFFSET_ONE,
+	MODE_EDIT,
+	MODE_RUN,
+	formatVaultExecutablePath,
+	formatInstalledDescription,
+	formatBrokenEnvironmentHint,
+	formatNotInstalledDescription,
 } from "./constants";
 
 export interface MarimoBridgeSettings {
@@ -67,8 +73,6 @@ export interface MarimoBridgeSettings {
 	marimoPath: string;
 	/** Port for the always-on edit server. */
 	port: number;
-	/** Host to bind. Keep 127.0.0.1 for local-only access. */
-	host: string;
 	/** Start the marimo edit server automatically when the plugin loads. */
 	autoStart: boolean;
 	/** Seconds to wait for the server health check before giving up. */
@@ -89,7 +93,6 @@ export const DEFAULT_SETTINGS: MarimoBridgeSettings = {
 	pythonPath: "",
 	marimoPath: "",
 	port: DEFAULT_PORT,
-	host: DEFAULT_HOST,
 	autoStart: DEFAULT_AUTO_START,
 	startupTimeout: DEFAULT_STARTUP_TIMEOUT,
 	takeOverPyExtension: DEFAULT_TAKE_OVER_PY_EXTENSION,
@@ -115,23 +118,26 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 
 		const isWin = process.platform === PLATFORM_WIN32;
 		const marimoExample = isWin
-			? `${DIR_VENV}/${DIR_SCRIPTS_WIN}/${EXE_MARIMO_WIN}`
-			: `${DIR_VENV}/${DIR_SCRIPTS_UNIX}/${EXE_MARIMO_UNIX}`;
+			? formatVaultExecutablePath(DIR_SCRIPTS_WIN, EXE_MARIMO_WIN)
+			: formatVaultExecutablePath(DIR_SCRIPTS_UNIX, EXE_MARIMO_UNIX);
 		const pythonExample = isWin
-			? `${DIR_VENV}/${DIR_SCRIPTS_WIN}/${EXE_PYTHON_WIN}`
-			: `${DIR_VENV}/${DIR_SCRIPTS_UNIX}/${EXE_PYTHON_UNIX}`;
+			? formatVaultExecutablePath(DIR_SCRIPTS_WIN, EXE_PYTHON_WIN)
+			: formatVaultExecutablePath(DIR_SCRIPTS_UNIX, EXE_PYTHON_UNIX);
 
 		// 1. marimo executable path
 		new Setting(containerEl)
 			.setName(SETTING_MARIMO_PATH_NAME)
 			.setDesc(
-				SETTING_MARIMO_PATH_DESC.replace("{marimoExample}", marimoExample)
+				SETTING_MARIMO_PATH_DESC.replace(
+					RUNTIME_CONSTANTS.PLACEHOLDER_MARIMO_EXAMPLE,
+					marimoExample
+				)
 			)
 			.addText((text) => {
 				text
 					.setPlaceholder(PLACEHOLDER_AUTO_DETECT)
 					.setValue(this.plugin.settings.marimoPath);
-				text.inputEl.addEventListener("blur", () => {
+				text.inputEl.addEventListener(RUNTIME_CONSTANTS.EVENT_BLUR, () => {
 					void (async () => {
 						this.plugin.settings.marimoPath = text.getValue().trim();
 						await this.plugin.saveSettings();
@@ -144,13 +150,16 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName(SETTING_PYTHON_PATH_NAME)
 			.setDesc(
-				SETTING_PYTHON_PATH_DESC.replace("{pythonExample}", pythonExample)
+				SETTING_PYTHON_PATH_DESC.replace(
+					RUNTIME_CONSTANTS.PLACEHOLDER_PYTHON_EXAMPLE,
+					pythonExample
+				)
 			)
 			.addText((text) => {
 				text
 					.setPlaceholder(PLACEHOLDER_AUTO_DETECT)
 					.setValue(this.plugin.settings.pythonPath);
-				text.inputEl.addEventListener("blur", () => {
+				text.inputEl.addEventListener(RUNTIME_CONSTANTS.EVENT_BLUR, () => {
 					void (async () => {
 						this.plugin.settings.pythonPath = text.getValue().trim();
 						await this.plugin.saveSettings();
@@ -183,17 +192,23 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 			const version = await this.plugin.servers.getMarimoVersion();
 			if (version) {
 				installSetting.setDesc(
-					`Installed: marimo ${version} (Python: ${this.plugin.servers.resolvePython()})`
+					formatInstalledDescription(
+						version,
+						this.plugin.servers.resolvePython()
+					)
 				);
 				installButton
 					?.setButtonText(TEXT_REINSTALL)
 					.setDisabled(false);
 			} else {
 				const brokenHint = this.plugin.servers.vaultVenvBroken()
-					? `${TEXT_VENV_BROKEN_HINT} `
+					? formatBrokenEnvironmentHint(TEXT_VENV_BROKEN_HINT)
 					: "";
 				installSetting.setDesc(
-					`Not installed. ${brokenHint}Will install into: ${this.plugin.servers.resolvePython()} -m pip install marimo`
+					formatNotInstalledDescription(
+						brokenHint,
+						this.plugin.servers.resolvePython()
+					)
 				);
 				installButton
 					?.setButtonText(TEXT_INSTALL)
@@ -208,30 +223,16 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 			.addText((text) => {
 				text
 					.setValue(String(this.plugin.settings.port));
-				text.inputEl.addEventListener("blur", () => {
+				text.inputEl.addEventListener(RUNTIME_CONSTANTS.EVENT_BLUR, () => {
 					void (async () => {
 						const value = text.getValue();
-						const n = parseInt(value, 10);
-						if (!isNaN(n) && n > 0 && n < 65536) {
+						const n = parseInt(value, RADIX_DECIMAL);
+						if (!isNaN(n) && n > 0 && n < PORT_MAX + OFFSET_ONE) {
 							this.plugin.settings.port = n;
 							await this.plugin.saveSettings();
 						} else {
 							text.setValue(String(this.plugin.settings.port));
 						}
-					})();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName(SETTING_HOST_NAME)
-			.setDesc(SETTING_HOST_DESC)
-			.addText((text) => {
-				text
-					.setValue(this.plugin.settings.host);
-				text.inputEl.addEventListener("blur", () => {
-					void (async () => {
-						this.plugin.settings.host = text.getValue().trim() || DEFAULT_HOST;
-						await this.plugin.saveSettings();
 					})();
 				});
 			});
@@ -253,10 +254,10 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 			.addText((text) => {
 				text
 					.setValue(String(this.plugin.settings.startupTimeout));
-				text.inputEl.addEventListener("blur", () => {
+				text.inputEl.addEventListener(RUNTIME_CONSTANTS.EVENT_BLUR, () => {
 					void (async () => {
 						const value = text.getValue();
-						const n = parseInt(value, 10);
+						const n = parseInt(value, RADIX_DECIMAL);
 						if (!isNaN(n) && n > 0) {
 							this.plugin.settings.startupTimeout = n;
 							await this.plugin.saveSettings();
@@ -284,13 +285,13 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 			.setDesc(SETTING_EMBED_MODE_DESC)
 			.addDropdown((d) =>
 				d
-					.addOption("edit", TEXT_EMBED_MODE_EDIT)
-					.addOption("run", TEXT_EMBED_MODE_RUN)
+					.addOption(MODE_EDIT, TEXT_EMBED_MODE_EDIT)
+					.addOption(MODE_RUN, TEXT_EMBED_MODE_RUN)
 					.setValue(this.plugin.settings.defaultEmbedMode)
 					.onChange(async (value) => {
 						this.plugin.settings.defaultEmbedMode = value as
-							| "edit"
-							| "run";
+							| typeof MODE_EDIT
+							| typeof MODE_RUN;
 						await this.plugin.saveSettings();
 					})
 			);
@@ -300,10 +301,10 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 			.addText((text) => {
 				text
 					.setValue(String(this.plugin.settings.defaultEmbedHeight));
-				text.inputEl.addEventListener("blur", () => {
+				text.inputEl.addEventListener(RUNTIME_CONSTANTS.EVENT_BLUR, () => {
 					void (async () => {
 						const value = text.getValue();
-						const n = parseInt(value, 10);
+						const n = parseInt(value, RADIX_DECIMAL);
 						if (!isNaN(n) && n > 0) {
 							this.plugin.settings.defaultEmbedHeight = n;
 							await this.plugin.saveSettings();
@@ -334,7 +335,7 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder(SETTING_API_TOKEN_WARN)
 					.setValue(this.plugin.settings.apiToken);
-				text.inputEl.addEventListener("blur", () => {
+				text.inputEl.addEventListener(RUNTIME_CONSTANTS.EVENT_BLUR, () => {
 					void (async () => {
 						this.plugin.settings.apiToken = text.getValue().trim();
 						await this.plugin.saveSettings();

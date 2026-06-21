@@ -30,11 +30,13 @@ notes. Edits are written straight back to the real `.py` file on disk.
   (PID/port/kind) to a file in the plugin directory. A full Obsidian quit
   signals them synchronously, and any server that survives a crash or force-quit
   is reconciled on the next launch — terminated only when positively confirmed
-  both alive **and** accepting the plugin's token, so unrelated processes are
-  never killed.
+  both alive **and** accepting the plugin's token. Unrelated processes are not
+  touched during cleanup; the configured edit port is the deliberate exception,
+  where an incompatible listener is evicted before the plugin starts its server.
 - **Token-authenticated servers** — servers run headless with
-  `--token-password`, bound to `127.0.0.1`. Use a generated per-session token by
-  default, or set your own in settings.
+  `--token-password`, always bound to `127.0.0.1`. The bind address is fixed and
+  cannot be changed in settings. Use a generated per-session token by default,
+  or set your own in settings.
 - **Built-in installer** — a settings section detects whether marimo is
   installed and offers a one-click `pip install marimo` (modeled after the
   JupyMD plugin). If marimo is not installed, the server is simply not started.
@@ -129,7 +131,6 @@ back to the defaults configured in settings.
 | **Python interpreter path** | *(auto-detect)* | Interpreter used for installing marimo and running `python -m marimo`. |
 | **marimo installation** | — | Shows the detected version (or "Not installed") and an install / upgrade button. |
 | **Port** | `2718` | Port for the edit server. |
-| **Host** | `127.0.0.1` | Bind address. Keep local for safety. |
 | **Auto-start server on load** | `on` | Start the edit server when Obsidian launches. |
 | **Startup timeout (seconds)** | `30` | How long to wait for the server health check. |
 | **Open .py files in marimo by default** | `on` | Turn off to keep `.py` as plain text and open via command / menu. Takes effect after reloading the plugin. |
@@ -166,16 +167,17 @@ src/main.ts            MarimoBridgePlugin — wiring, commands, lifecycle
 ```
 
 1. On load, `ServerManager` launches
-   `marimo edit --headless --token-password <token> --port <port> --host <host>`
+   `marimo edit --headless --token-password <token> --port <port> --host 127.0.0.1`
    with the vault as the working directory, and persists a record of the spawned
    process for crash recovery.
 2. Views and embeds load
-   `http://<host>:<port>/?file=<relative-path>&access_token=<token>` in a
+   `http://127.0.0.1:<port>/?file=<relative-path>&access_token=<token>` in a
    `<webview>`. The marimo server reads and writes the real file, so edits
    persist with no extra file handling in the plugin.
 3. `run`-mode embeds get a separate, lazily started `marimo run` server.
 4. A pre-existing server on the port is reused only if it accepts the active
-   token; an incompatible leftover is evicted and replaced.
+   token; an incompatible or foreign listener is evicted and replaced. If the
+   port cannot be released, startup stops without spawning a conflicting server.
 5. On exit the spawned servers are signalled synchronously; on the next launch
    any record left behind is reconciled (terminated only when confirmed alive
    and ours).
@@ -188,8 +190,8 @@ The servers run headless with `--token-password`, bound to `127.0.0.1`. Every
 view and embed URL carries an `access_token`, so a request without the token is
 bounced to marimo's login page. By default the plugin generates a secure random
 token per session; you can pin your own under **API token** in settings (it
-takes effect after a server restart). Keep the host set to `127.0.0.1` and avoid
-exposing the port.
+takes effect after a server restart). The host is fixed to `127.0.0.1`; avoid
+forwarding or otherwise exposing the port.
 
 ---
 
@@ -199,6 +201,7 @@ exposing the port.
 npm install
 npm run dev     # esbuild watch build
 npm run build   # type-check (tsc) + production bundle -> main.js
+npm test        # regression tests with the Node built-in test runner
 npm run lint    # eslint (flat config + eslint-plugin-obsidianmd)
 ```
 

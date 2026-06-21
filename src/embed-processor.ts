@@ -38,6 +38,7 @@ import {
 	RADIX_DECIMAL,
 	INDEX_NOT_FOUND,
 	OFFSET_ONE,
+	RUNTIME_CONSTANTS,
 } from "./constants";
 
 /** Parsed configuration of a single ```marimo block. */
@@ -60,6 +61,8 @@ class MarimoEmbedChild extends MarkdownRenderChild {
 	private mode: typeof MODE_EDIT | typeof MODE_RUN;
 	private height: number;
 	private wrapper: HTMLDivElement;
+	private disposed = false;
+	private acquiredRunServer = false;
 
 	constructor(
 		containerEl: HTMLElement,
@@ -86,6 +89,7 @@ class MarimoEmbedChild extends MarkdownRenderChild {
 			// Every embed needs at least the edit server (run mode also reuses it
 			// for availability checks / fast failure).
 			const ok = await this.plugin.servers.ensureEditServer();
+			if (this.isDisposed()) return;
 			if (!ok) {
 				loading.setText(TEXT_SERVER_UNAVAILABLE);
 				return;
@@ -95,14 +99,20 @@ class MarimoEmbedChild extends MarkdownRenderChild {
 			if (this.mode === MODE_RUN) {
 				url = await this.plugin.servers.ensureRunServer(this.file);
 				if (!url) {
+					if (this.isDisposed()) return;
 					loading.setText(`${TEXT_RUN_SERVER_ERROR_PREFIX}${this.file}${CHAR_DOT}`);
 					return;
 				}
+				if (this.isDisposed()) {
+					await this.plugin.servers.releaseRunServer(this.file);
+					return;
+				}
+				this.acquiredRunServer = true;
 			} else {
 				url = this.plugin.servers.editFileUrl(this.file);
 			}
 
-			const partitionName = `${PARTITION_PREFIX}shared`;
+			const partitionName = `${PARTITION_PREFIX}${RUNTIME_CONSTANTS.PARTITION_SHARED}`;
 
 			loading.remove();
 			createMarimoWebview(this.plugin, this.wrapper, url, partitionName, undefined, this.height);
@@ -110,10 +120,16 @@ class MarimoEmbedChild extends MarkdownRenderChild {
 	}
 
 	onunload(): void {
-		if (this.mode === MODE_RUN) {
+		this.disposed = true;
+		if (this.mode === MODE_RUN && this.acquiredRunServer) {
+			this.acquiredRunServer = false;
 			void this.plugin.servers.releaseRunServer(this.file);
 		}
 		this.wrapper.empty();
+	}
+
+	private isDisposed(): boolean {
+		return this.disposed;
 	}
 }
 

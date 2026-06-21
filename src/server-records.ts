@@ -12,7 +12,13 @@
  * See `specs/013-terminate-marimo-on-exit/contracts/server-records.md`.
  */
 import * as fs from "fs";
-import { ENCODING_UTF8, PORT_MAX } from "./constants";
+import {
+	ENCODING_UTF8,
+	MODE_EDIT,
+	MODE_RUN,
+	PORT_MAX,
+	RUNTIME_CONSTANTS,
+} from "./constants";
 
 /** One persisted entry per spawned marimo server. */
 export interface SpawnedServerRecord {
@@ -92,30 +98,39 @@ export class ServerRecordStore {
 		try {
 			fs.writeFileSync(this.filePath, JSON.stringify(data));
 		} catch (e) {
-			console.error("[MarimoBridge] Failed to write server records:", e);
+			console.error(RUNTIME_CONSTANTS.LOG_RECORD_WRITE_FAILED, e);
 		}
 	}
 
 	/** A record is usable only with a positive pid and a positive port. */
 	private static isValid(r: unknown): r is SpawnedServerRecord {
-		if (typeof r !== "object" || r === null) return false;
+		if (typeof r !== RUNTIME_CONSTANTS.TYPE_OBJECT || r === null) return false;
 		const rec = r as Partial<SpawnedServerRecord>;
 		const pidOk =
-			typeof rec.pid === "number" &&
+			isNumber(rec.pid) &&
 			Number.isInteger(rec.pid) &&
 			rec.pid > 0;
 		const portOk =
-			typeof rec.port === "number" &&
+			isNumber(rec.port) &&
 			Number.isInteger(rec.port) &&
 			rec.port > 0 &&
 			rec.port <= PORT_MAX;
 		const tokenOk =
-			typeof rec.token === "string" && rec.token.trim().length > 0;
+			isString(rec.token) &&
+			rec.token.trim().length > 0;
 		return (
 			pidOk &&
 			portOk &&
 			tokenOk &&
-			(rec.kind === "edit" || rec.kind === "run")
+			(rec.kind === MODE_EDIT || rec.kind === MODE_RUN)
 		);
 	}
+}
+
+function isNumber(value: unknown): value is number {
+	return typeof value === RUNTIME_CONSTANTS.TYPE_NUMBER;
+}
+
+function isString(value: unknown): value is string {
+	return typeof value === RUNTIME_CONSTANTS.TYPE_STRING;
 }

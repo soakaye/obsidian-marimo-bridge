@@ -16,7 +16,7 @@ Guarantee that every marimo server the plugin *spawns* (the always-on edit serve
 
 **Storage**: A dedicated JSON file in the plugin directory (e.g. `<vault>/.obsidian/plugins/marimo-bridge/<records file>`), written synchronously with `fs`. Kept **separate** from Obsidian's `data.json` so `saveData(settings)` cannot clobber it and so writes survive a crash without an async flush.
 
-**Testing**: No automated test framework exists in the repo (scripts: `dev`, `build`, `lint` only). Validation is `npm run build` (tsc type-check) + `npm run lint` + the manual scenarios in [quickstart.md](./quickstart.md).
+**Testing**: The repository includes an esbuild-bundled Node built-in regression suite invoked with `npm test`, including lifecycle and record-store coverage. Validation also requires `npm run build`, `npm run lint`, and the manual scenarios in [quickstart.md](./quickstart.md).
 
 **Target Platform**: Obsidian Desktop on Windows and Unix-like systems (macOS/Linux). Mobile is out of scope (Principle II).
 

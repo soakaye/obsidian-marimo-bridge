@@ -49,7 +49,13 @@ import {
 	FILE_NEW,
 	EXT_PY,
 	TEXT_MARIMO,
-	REDIRECT_URL_KEY
+	REDIRECT_URL_KEY,
+	TEXT_WEBVIEW_LOAD_FAILED,
+	RUNTIME_CONSTANTS,
+	formatClassSelector,
+	formatWebviewReloadLog,
+	formatDidFailLoadReason,
+	formatWebviewConsoleLog,
 } from "./constants";
 
 /** Persisted view state. `file` undefined → the marimo home page. */
@@ -76,7 +82,7 @@ export class MarimoEditorView extends ItemView {
 
 	getDisplayText(): string {
 		if (!this.currentFile) return TEXT_MARIMO;
-		return this.currentFile.split("/").pop() ?? TEXT_MARIMO;
+		return this.currentFile.split(RUNTIME_CONSTANTS.SLASH).pop() ?? TEXT_MARIMO;
 	}
 
 	getIcon(): string {
@@ -118,7 +124,7 @@ export class MarimoEditorView extends ItemView {
 			try {
 				await this.executeRender();
 			} catch (e) {
-				console.error("[MarimoBridge] render error:", e);
+				console.error(RUNTIME_CONSTANTS.LOG_RENDER_ERROR, e);
 			}
 		});
 		await this.activeRenderPromise;
@@ -132,7 +138,7 @@ export class MarimoEditorView extends ItemView {
 		container.empty();
 		container.createDiv({
 			cls: CLS_LOADING,
-			text: "Starting marimo server...",
+			text: RUNTIME_CONSTANTS.TEXT_STARTING_SERVER,
 		});
 
 		const ok = await this.plugin.servers.ensureEditServer();
@@ -141,7 +147,7 @@ export class MarimoEditorView extends ItemView {
 			this.webview = null;
 			container.createDiv({
 				cls: CLS_LOADING,
-				text: "marimo server is not available. Check the marimo path in settings, then reopen.",
+				text: TEXT_WEBVIEW_LOAD_FAILED,
 			});
 			return;
 		}
@@ -151,7 +157,7 @@ export class MarimoEditorView extends ItemView {
 			? this.plugin.servers.editFileUrl(this.currentFile)
 			: this.plugin.servers.editHomeUrl();
 
-		const partitionName = `${PARTITION_PREFIX}shared`;
+		const partitionName = `${PARTITION_PREFIX}${RUNTIME_CONSTANTS.PARTITION_SHARED}`;
 
 		const onFileChanged = (newFile: string) => {
 			if (this.currentFile !== newFile) {
@@ -170,7 +176,7 @@ export class MarimoEditorView extends ItemView {
 				this.webview = createMarimoWebview(this.plugin, container, url, partitionName, onFileChanged);
 			} else {
 				// Remove any loading indicator if it was created/left over
-				container.querySelectorAll(`.${CLS_LOADING}`).forEach(el => { el.remove(); });
+				container.querySelectorAll(formatClassSelector(CLS_LOADING)).forEach(el => { el.remove(); });
 				
 				const currentSrc = this.webview.getAttribute(ATTR_SRC);
 				if (currentSrc !== url) {
@@ -205,7 +211,9 @@ export function createMarimoWebview(
 	heightPx?: number
 ): HTMLElement {
 	// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call
-	const electron = (window as any).require("electron") as { shell: { openExternal: (url: string) => Promise<void> } };
+	const electron = (window as any).require(
+		RUNTIME_CONSTANTS.ELECTRON_MODULE
+	) as { shell: { openExternal: (url: string) => Promise<void> } };
 	const shell = electron.shell;
 	// Create the <webview> DETACHED. Electron reads `preload` and `partition`
 	// when the guest attaches (on insertion into the DOM); setting them after
@@ -213,7 +221,7 @@ export function createMarimoWebview(
 	// attributes and wire every event listener first, then append at the very
 	// end of this function.
 	const el = parent.ownerDocument.createElement(
-		"webview" as keyof HTMLElementTagNameMap
+		RUNTIME_CONSTANTS.TAG_WEBVIEW as keyof HTMLElementTagNameMap
 	) as HTMLElement;
 	el.addClass(CLS_WEBVIEW);
 	el.setAttribute(ATTR_ALLOWPOPUPS, "");
@@ -221,7 +229,10 @@ export function createMarimoWebview(
 	el.setAttribute(ATTR_SRC, addTokenToUrl(plugin, url));
 
 	if (heightPx) {
-		el.style.setProperty("height", `${heightPx.toString()}px`);
+		el.style.setProperty(
+			RUNTIME_CONSTANTS.CSS_HEIGHT,
+			`${heightPx.toString()}${RUNTIME_CONSTANTS.CSS_PX}`
+		);
 	}
 
 	let initialFilePath: string | null = null;
@@ -287,14 +298,14 @@ export function createMarimoWebview(
 				}
 			} else {
 				// US3: External link - open in default browser (restrict to http/https)
-				if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+				if (parsed.protocol === PROTOCOL_HTTP || parsed.protocol === PROTOCOL_HTTPS) {
 					await shell.openExternal(parsed.href);
 				} else {
-					console.warn("[MarimoBridge] Blocked external navigation to unsafe protocol:", parsed.protocol);
+					console.warn(RUNTIME_CONSTANTS.LOG_UNSAFE_PROTOCOL, parsed.protocol);
 				}
 			}
 		} catch (e) {
-			console.error("Failed to parse link URL:", e);
+			console.error(RUNTIME_CONSTANTS.LOG_LINK_PARSE_FAILED, e);
 		}
 	};
 
@@ -311,7 +322,7 @@ export function createMarimoWebview(
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call
 			(el as any).executeJavaScript(INJECTION_SCRIPT);
 		} catch (e) {
-			console.error("[MarimoBridge] Failed to inject interception script:", e);
+			console.error(RUNTIME_CONSTANTS.LOG_INJECTION_FAILED, e);
 		}
 	});
 
@@ -320,25 +331,45 @@ export function createMarimoWebview(
 	// `dom-ready`. A `reload()` reliably brings it up, so we watch for missing
 	// readiness (and explicit load failures) and reload, capped to avoid loops.
 	let loadRetries = 0;
+	let loadFailureShown = false;
+	const showLoadFailure = () => {
+		if (loadFailureShown) return;
+		loadFailureShown = true;
+		el.remove();
+		parent.createDiv({
+			cls: CLS_LOADING,
+			text: TEXT_WEBVIEW_LOAD_FAILED,
+		});
+	};
 	const reloadWebview = (reason: string) => {
-		if (domReady || loadRetries >= WEBVIEW_MAX_LOAD_RETRIES) return;
+		if (domReady) return;
+		if (loadRetries >= WEBVIEW_MAX_LOAD_RETRIES) {
+			showLoadFailure();
+			return;
+		}
 		// The view/embed may have been torn down while the watchdog was pending;
 		// reloading a detached <webview> is pointless (and the guest is gone).
 		if (!el.isConnected) return;
 		loadRetries++;
 		console.warn(
-			`[MarimoBridge] webview not ready (${reason}); reloading, attempt ${loadRetries.toString()}/${WEBVIEW_MAX_LOAD_RETRIES.toString()}`
+			formatWebviewReloadLog(
+				reason,
+				loadRetries,
+				WEBVIEW_MAX_LOAD_RETRIES
+			)
 		);
 		try {
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call
 			(el as any).reload();
 		} catch (e) {
-			console.error("[MarimoBridge] webview reload failed:", e);
+			console.error(RUNTIME_CONSTANTS.LOG_WEBVIEW_RELOAD_FAILED, e);
 		}
 		scheduleLoadWatchdog();
 	};
 	const scheduleLoadWatchdog = () => {
-		window.setTimeout(() => { reloadWebview("no dom-ready"); }, WEBVIEW_LOAD_WATCHDOG_MS);
+		window.setTimeout(() => {
+			reloadWebview(RUNTIME_CONSTANTS.LOG_NO_DOM_READY);
+		}, WEBVIEW_LOAD_WATCHDOG_MS);
 	};
 
 	el.addEventListener(EVENT_DID_FAIL_LOAD, (event: Event) => {
@@ -347,7 +378,7 @@ export function createMarimoWebview(
 		const ev = event as unknown as { errorCode?: number; isMainFrame?: boolean };
 		if (ev.errorCode === ERR_LOAD_ABORTED) return;
 		if (ev.isMainFrame === false) return;
-		reloadWebview(`did-fail-load ${String(ev.errorCode)}`);
+		reloadWebview(formatDidFailLoadReason(ev.errorCode));
 	});
 
 	el.addEventListener(EVENT_WILL_NAVIGATE, (event: Event) => {
@@ -381,7 +412,7 @@ export function createMarimoWebview(
 				const absoluteUrl = addTokenToUrl(plugin, new URL(ev.url, base).href);
 				el.setAttribute(ATTR_SRC, absoluteUrl);
 			} catch (e) {
-				console.error("[MarimoBridge] Failed to resolve relative URL:", ev.url, e);
+				console.error(RUNTIME_CONSTANTS.LOG_RELATIVE_URL_FAILED, ev.url, e);
 			}
 		}
 	});
@@ -397,11 +428,11 @@ export function createMarimoWebview(
 					const base = el.getAttribute(ATTR_SRC) ?? undefined;
 					if (base) {
 						const absoluteUrl = addTokenToUrl(plugin, base);
-						console.warn("[MarimoBridge] Landed on login page, retrying with token. Attempt:", authRetryCount);
+						console.warn(RUNTIME_CONSTANTS.LOG_AUTH_RETRY, authRetryCount);
 						el.setAttribute(ATTR_SRC, absoluteUrl);
 					}
 				} else {
-					console.error("[MarimoBridge] Auth retry limit reached. Showing login page.");
+					console.error(RUNTIME_CONSTANTS.LOG_AUTH_LIMIT);
 				}
 				return;
 			}
@@ -415,7 +446,7 @@ export function createMarimoWebview(
 				}
 			}
 		} catch (e) {
-			console.error("[MarimoBridge] Failed to parse did-navigate URL:", ev.url, e);
+			console.error(RUNTIME_CONSTANTS.LOG_NAVIGATE_PARSE_FAILED, ev.url, e);
 		}
 	});
 
@@ -442,15 +473,19 @@ export function createMarimoWebview(
 					}
 				}
 			} catch (e) {
-				console.error("[MarimoBridge] Failed to parse open message:", ev.message, e);
+				console.error(RUNTIME_CONSTANTS.LOG_OPEN_MESSAGE_PARSE_FAILED, ev.message, e);
 			}
 			return;
 		}
 
-		const prefix = `[MarimoWebviewConsole] ${ev.message} (${ev.sourceId}:${ev.line.toString()})`;
-		if (ev.level === 2) {
+		const prefix = formatWebviewConsoleLog(
+			ev.message,
+			ev.sourceId,
+			ev.line
+		);
+		if (ev.level === RUNTIME_CONSTANTS.CONSOLE_LEVEL_ERROR) {
 			console.error(prefix);
-		} else if (ev.level === 1) {
+		} else if (ev.level === RUNTIME_CONSTANTS.CONSOLE_LEVEL_WARNING) {
 			console.warn(prefix);
 		} else {
 			// eslint-disable-next-line

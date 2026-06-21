@@ -26,18 +26,18 @@ A user opens one or more marimo notebooks during a session (an edit server plus 
 
 ---
 
-### User Story 2 - Servers the plugin did not start are left untouched (Priority: P2)
+### User Story 2 - Cleanup leaves servers the plugin did not start untouched (Priority: P2)
 
 A user (or another tool) is running an independent marimo server, or the plugin attached to a pre-existing compatible server rather than spawning its own. When the user quits Obsidian, only the processes the plugin actually started are terminated; servers the plugin merely connected to but did not spawn are left running.
 
-**Why this priority**: The request is explicitly scoped to "自身が起動した" (servers it started itself). Killing a server the plugin did not start would surprise the user and could disrupt their separate workflow. This guards against over-reach, which is as important as the cleanup itself but secondary to delivering the cleanup at all.
+**Why this priority**: The request is explicitly scoped to "自身が起動した" (servers it started itself). Killing a server the plugin did not start during unload, exit, or orphan reconciliation would surprise the user and could disrupt their separate workflow. Startup conflict resolution on the configured edit port is a separate safety boundary.
 
 **Independent Test**: Start an independent marimo server manually so the plugin adopts it instead of spawning one, use it through Obsidian, then quit Obsidian and confirm the independently started server is still running.
 
 **Acceptance Scenarios**:
 
 1. **Given** the plugin adopted a pre-existing server it did not spawn, **When** Obsidian exits or the plugin unloads, **Then** that adopted server continues running and is not terminated.
-2. **Given** an incompatible server occupies the configured port, **When** the plugin tries to start its edit server, **Then** startup stops with a port-conflict notice and the incompatible process is left untouched.
+2. **Given** an incompatible server occupies the configured edit port, **When** the plugin tries to start its edit server, **Then** the startup conflict-resolution path evicts that listener and starts a token-compatible replacement; if the port cannot be released, startup stops without spawning a conflicting process.
 
 ---
 
@@ -67,7 +67,7 @@ A user (or another tool) is running an independent marimo server, or the plugin 
 - **FR-002**: On plugin unload, disable, or reload, the plugin MUST terminate every marimo server process it started, independent of whether the whole application is exiting.
 - **FR-003**: Termination MUST cover both the always-on edit server and every per-notebook run server the plugin started.
 - **FR-004**: Termination MUST also stop any child/worker subprocesses descended from a server the plugin started, so that no descendant survives the parent.
-- **FR-005**: The plugin MUST NOT terminate a marimo server it did not start (e.g. a pre-existing server it merely adopted/attached to).
+- **FR-005**: Unload, exit, and orphan-reconciliation cleanup MUST NOT terminate a marimo server the plugin did not start (e.g. a compatible pre-existing server it merely adopted/attached to). Startup conflict resolution on the configured edit port is governed separately by Safe Local Bindings and may evict an incompatible listener so the plugin can bind safely.
 - **FR-006**: The plugin MUST terminate a server that is still in the process of starting (not yet reported healthy) if exit/unload occurs before startup completes.
 - **FR-007**: For each server it spawns, the plugin MUST persist a record containing the process identifier, port, server kind, and spawn token to a plugin-owned data store, and MUST remove that record only after the process is confirmed to have exited.
 - **FR-007a**: On startup, the plugin MUST read the persisted records and, for each one, terminate the leftover process only when it can positively confirm the recorded process identifier still owns the recorded port AND the server accepts the record's spawn token. Confirmed leftovers MUST be signaled and retained in the store if they remain alive; unconfirmable records MUST be left untouched and cleared from the store.

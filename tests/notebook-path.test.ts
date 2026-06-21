@@ -36,7 +36,6 @@ function settings(): MarimoBridgeSettings {
 		pythonPath: "",
 		marimoPath: "",
 		port: 2718,
-		host: "127.0.0.1",
 		autoStart: false,
 		startupTimeout: 1,
 		takeOverPyExtension: true,
