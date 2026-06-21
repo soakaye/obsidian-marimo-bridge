@@ -5,6 +5,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	unlinkSync,
 	writeFileSync,
@@ -33,6 +34,9 @@ interface ManagerInternals {
 	edit: ManagedServerState | null;
 	runServers: Map<string, ManagedServerState>;
 	runServerRefs: Map<string, number>;
+	runServerAliases: Map<string, string>;
+	runSpawning: Map<string, Promise<string | null>>;
+	nextRunPort: number;
 	records: {
 		add(record: SpawnedServerRecord): void;
 		load(): SpawnedServerRecord[];
@@ -54,6 +58,7 @@ interface ManagerInternals {
 	): ChildProcess;
 	killProcess(proc: ChildProcess | null): void;
 	allocateRunPort(): Promise<number>;
+	runServerUrl(port: number): string;
 }
 
 function makeSettings(): MarimoBridgeSettings {
@@ -124,6 +129,43 @@ test("always builds edit URLs on the fixed loopback host", () => {
 		const { manager } = makeManager(vault, legacySettings);
 
 		assert.equal(manager.editBaseUrl, "http://127.0.0.1:2718");
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("builds token-bearing run URLs on the fixed loopback host", () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		const { internal } = makeManager(vault);
+
+		assert.equal(
+			internal.runServerUrl(2719),
+			"http://127.0.0.1:2719/?access_token=session-token"
+		);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("adopts a compatible authenticated edit server without spawning", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		const { manager, internal } = makeManager(vault);
+		let spawnCount = 0;
+		internal.isPortFree = async () => false;
+		internal.healthOk = async () => true;
+		internal.serverAcceptsOurAuth = async () => true;
+		internal.spawnServer = () => {
+			spawnCount++;
+			return fakeChild(99_999_997);
+		};
+
+		assert.equal(await manager.ensureEditServer(), true);
+		assert.equal(spawnCount, 0);
+		assert.ok(internal.edit);
+		assert.equal(internal.edit.process, null);
+		assert.equal(internal.edit.ready, true);
 	} finally {
 		rmSync(vault, { recursive: true, force: true });
 	}
@@ -219,8 +261,10 @@ test("counts every concurrent run-server acquisition before releasing it", async
 		});
 		assert.ok(resolveReady);
 		resolveReady(true);
-		assert.ok(await first);
-		assert.ok(await second);
+		const firstUrl = await first;
+		const secondUrl = await second;
+		assert.ok(firstUrl);
+		assert.equal(secondUrl, firstUrl);
 
 		assert.equal(internal.runServerRefs.get("notebooks/shared.py"), 2);
 		await manager.releaseRunServer("notebooks/shared.py");
@@ -229,6 +273,122 @@ test("counts every concurrent run-server acquisition before releasing it", async
 		await manager.releaseRunServer("notebooks/shared.py");
 		assert.equal(killCount, 1);
 		assert.equal(internal.runServers.has("notebooks/shared.py"), false);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("cleans all run-server state when startup fails", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		writeFileSync(path.join(vault, "failed.py"), "print('failed')\n");
+		const { manager, internal } = makeManager(vault);
+		internal.allocateRunPort = async () => 2719;
+		internal.spawnServer = () => fakeChild(99_999_998);
+		internal.waitForReady = async () => false;
+		internal.killProcess = () => {};
+
+		assert.equal(await manager.ensureRunServer("failed.py"), null);
+		assert.equal(internal.runServers.size, 0);
+		assert.equal(internal.runServerRefs.size, 0);
+		assert.equal(internal.runServerAliases.size, 0);
+		assert.equal(internal.runSpawning.size, 0);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("clears in-flight run startup tracking during global cleanup", () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		const { manager, internal } = makeManager(vault);
+		internal.runSpawning.set("pending.py", Promise.resolve(null));
+
+		manager.stopAll();
+
+		assert.equal(internal.runSpawning.size, 0);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("leaves no tracked run server after ten acquire-release cycles", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		writeFileSync(path.join(vault, "cycles.py"), "print('cycles')\n");
+		const { manager, internal } = makeManager(vault);
+		internal.allocateRunPort = async () => 2719;
+		internal.spawnServer = () => fakeChild(99_999_990);
+		internal.waitForReady = async () => true;
+		internal.killProcess = () => {};
+
+		for (let cycle = 0; cycle < 10; cycle++) {
+			assert.ok(await manager.ensureRunServer("cycles.py"));
+			await manager.releaseRunServer("cycles.py");
+			assert.equal(internal.runServers.size, 0);
+			assert.equal(internal.runServerRefs.size, 0);
+			assert.equal(internal.runServerAliases.size, 0);
+		}
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("skips occupied and already-tracked run-server ports", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		const { internal } = makeManager(vault);
+		internal.nextRunPort = 2718;
+		internal.runServers.set("tracked.py", {
+			kind: "run",
+			port: 2719,
+			process: null,
+			ready: true,
+		});
+		internal.isPortFree = async (port) => port === 2721;
+
+		assert.equal(await internal.allocateRunPort(), 2721);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("spawns run servers headlessly with token authentication on loopback", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		const notebook = path.join(vault, "spawn.py");
+		writeFileSync(notebook, "print('spawn')\n");
+		const { manager, internal } = makeManager(vault);
+		const fixture = path.resolve(
+			process.cwd(),
+			"tests/fixtures/fake-marimo.mjs"
+		);
+		internal.resolveCommand = () => ({
+			cmd: process.execPath,
+			prefixArgs: [fixture],
+		});
+		internal.allocateRunPort = async () => 2719;
+		internal.waitForReady = async () => true;
+
+		assert.ok(await manager.ensureRunServer("spawn.py"));
+		const child = internal.runServers.get("spawn.py")?.process;
+		assert.ok(child);
+		assert.ok(child.spawnargs.includes("run"));
+		assert.ok(child.spawnargs.includes(realpathSync(notebook)));
+		assert.ok(child.spawnargs.includes("--headless"));
+		assert.ok(child.spawnargs.includes("--token-password"));
+		assert.ok(child.spawnargs.includes("--host"));
+		assert.equal(
+			child.spawnargs[child.spawnargs.indexOf("--host") + 1],
+			"127.0.0.1"
+		);
+		assert.equal(
+			child.spawnargs[child.spawnargs.indexOf("--token-password") + 1],
+			"session-token"
+		);
+
+		child.kill("SIGTERM");
+		await once(child, "exit");
 	} finally {
 		rmSync(vault, { recursive: true, force: true });
 	}

@@ -19,11 +19,16 @@ export function resolveVaultNotebook(
 	vaultPath: string,
 	requestedPath: string
 ): ResolvedVaultNotebook | null {
-	if (!requestedPath || path.isAbsolute(requestedPath)) return null;
+	if (!requestedPath) return null;
+	const normalizedRequest = requestedPath.replaceAll(
+		RUNTIME_CONSTANTS.BACKSLASH,
+		path.sep
+	);
+	if (path.isAbsolute(normalizedRequest)) return null;
 
 	try {
 		const realVault = fs.realpathSync(vaultPath);
-		const candidate = path.resolve(realVault, requestedPath);
+		const candidate = path.resolve(realVault, normalizedRequest);
 		const realCandidate = fs.realpathSync(candidate);
 		const relative = path.relative(realVault, realCandidate);
 		const escapesVault =

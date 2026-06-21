@@ -156,3 +156,168 @@ test("shows an explanatory failure after capped webview reloads", () => {
 	]);
 	assert.equal(webview.isConnected, false);
 });
+
+test("cancels recovery after the webview becomes ready", () => {
+	const webview = new FakeWebview();
+	const timers: (() => void)[] = [];
+	const parent = {
+		ownerDocument: {
+			createElement: () => webview,
+		},
+		appendChild: (child: FakeWebview) => {
+			child.isConnected = true;
+			return child;
+		},
+		createDiv: () => ({}),
+	};
+	const plugin = {
+		servers: {
+			getActiveToken: () => "session-token",
+		},
+		openMarimo: async () => {},
+		app: {
+			workspace: {
+				openLinkText: async () => {},
+			},
+		},
+	} as unknown as MarimoBridgePlugin;
+	Object.defineProperty(globalThis, "window", {
+		configurable: true,
+		value: {
+			require: () => ({
+				shell: {
+					openExternal: async () => {},
+				},
+			}),
+			setTimeout: (callback: () => void) => {
+				timers.push(callback);
+				return timers.length;
+			},
+			clearTimeout: () => {},
+		},
+	});
+
+	createMarimoWebview(
+		plugin,
+		parent as unknown as HTMLElement,
+		"http://127.0.0.1:2718/",
+		"persist:test"
+	);
+	webview.dispatchEvent(new Event("dom-ready"));
+	const callback = timers.shift();
+	assert.ok(callback);
+	callback();
+
+	assert.equal(webview.reloadCount, 0);
+});
+
+test("does not recover a detached webview", () => {
+	const webview = new FakeWebview();
+	const timers: (() => void)[] = [];
+	const messages: string[] = [];
+	const parent = {
+		ownerDocument: {
+			createElement: () => webview,
+		},
+		appendChild: (child: FakeWebview) => {
+			child.isConnected = true;
+			return child;
+		},
+		createDiv: (options: { text?: string }) => {
+			if (options.text) messages.push(options.text);
+			return {};
+		},
+	};
+	const plugin = {
+		servers: {
+			getActiveToken: () => "session-token",
+		},
+		openMarimo: async () => {},
+		app: {
+			workspace: {
+				openLinkText: async () => {},
+			},
+		},
+	} as unknown as MarimoBridgePlugin;
+	Object.defineProperty(globalThis, "window", {
+		configurable: true,
+		value: {
+			require: () => ({
+				shell: {
+					openExternal: async () => {},
+				},
+			}),
+			setTimeout: (callback: () => void) => {
+				timers.push(callback);
+				return timers.length;
+			},
+			clearTimeout: () => {},
+		},
+	});
+
+	createMarimoWebview(
+		plugin,
+		parent as unknown as HTMLElement,
+		"http://127.0.0.1:2718/",
+		"persist:test"
+	);
+	webview.remove();
+	const callback = timers.shift();
+	assert.ok(callback);
+	callback();
+
+	assert.equal(webview.reloadCount, 0);
+	assert.deepEqual(messages, []);
+});
+
+test("retries an explicit main-frame load failure", () => {
+	const webview = new FakeWebview();
+	const parent = {
+		ownerDocument: {
+			createElement: () => webview,
+		},
+		appendChild: (child: FakeWebview) => {
+			child.isConnected = true;
+			return child;
+		},
+		createDiv: () => ({}),
+	};
+	const plugin = {
+		servers: {
+			getActiveToken: () => "session-token",
+		},
+		openMarimo: async () => {},
+		app: {
+			workspace: {
+				openLinkText: async () => {},
+			},
+		},
+	} as unknown as MarimoBridgePlugin;
+	Object.defineProperty(globalThis, "window", {
+		configurable: true,
+		value: {
+			require: () => ({
+				shell: {
+					openExternal: async () => {},
+				},
+			}),
+			setTimeout: () => 0,
+			clearTimeout: () => {},
+		},
+	});
+
+	createMarimoWebview(
+		plugin,
+		parent as unknown as HTMLElement,
+		"http://127.0.0.1:2718/",
+		"persist:test"
+	);
+	const event = new Event("did-fail-load");
+	Object.defineProperties(event, {
+		errorCode: { value: -2 },
+		isMainFrame: { value: true },
+	});
+	webview.dispatchEvent(event);
+
+	assert.equal(webview.reloadCount, 1);
+});

@@ -924,6 +924,7 @@ export class ServerManager {
 		this.runServers.clear();
 		this.runServerRefs.clear();
 		this.runServerAliases.clear();
+		this.runSpawning.clear();
 	}
 
 	/**
@@ -948,6 +949,7 @@ export class ServerManager {
 		this.runServers.clear();
 		this.runServerRefs.clear();
 		this.runServerAliases.clear();
+		this.runSpawning.clear();
 	}
 
 	/**

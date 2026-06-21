@@ -47,3 +47,35 @@ test("loads records with a non-empty ownership token", () => {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("drops malformed ownership records while retaining valid records", () => {
+	const dir = mkdtempSync(path.join(tmpdir(), "marimo-records-"));
+	const file = path.join(dir, "records.json");
+	try {
+		const valid = {
+			pid: 1234,
+			port: 2718,
+			kind: "run",
+			token: "session-token",
+		};
+		writeFileSync(
+			file,
+			JSON.stringify({
+				records: [
+					valid,
+					{ ...valid, pid: 0 },
+					{ ...valid, port: 70000 },
+					{ ...valid, kind: "other" },
+					{ ...valid, token: " " },
+					null,
+				],
+			})
+		);
+
+		const store = new ServerRecordStore(file);
+
+		assert.deepEqual(store.load(), [valid]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

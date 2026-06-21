@@ -1,13 +1,13 @@
-# Contract: Run-Server Acquisition and Release
+# Contract: Lifecycle, Recovery, and Local-Server Behavior
 
 The plugin exposes no public network API for this feature. The relevant contract
-is the internal lifecycle boundary between markdown render children and
-`ServerManager`.
+is the internal behavior boundary among markdown render children, embedded
+pages, notebook creation, settings, and `ServerManager`.
 
 ## 1. Acquire
 
 ```text
-acquireRunServer(vaultRelativePath) -> URL | null
+ensureRunServer(vaultRelativePath) -> URL | null
 ```
 
 The operation MUST:
@@ -67,7 +67,51 @@ Plugin unload and application-exit cleanup remain authoritative:
 - run-server maps, startup maps, and reference maps are cleared;
 - persisted ownership records follow the existing confirmed-exit contract.
 
-## 6. Requirement traceability
+## 6. Embedded-page recovery
+
+An attached embedded page MUST:
+
+1. Stop recovery when readiness is reported.
+2. Retry no more than three times when readiness is absent or the main frame
+   fails.
+3. Perform no recovery action after it is detached.
+4. Remove the unusable page and show shared recovery guidance exactly once after
+   retries are exhausted.
+
+## 7. Untitled notebook naming
+
+Notebook creation MUST:
+
+1. Examine generated candidates in deterministic order.
+2. Create the first candidate that does not already exist.
+3. Examine no more than 1,000 candidates.
+4. Modify no file and show one notice when the search is exhausted.
+
+## 8. Server binding and edit-port resolution
+
+Every edit and run server operation MUST:
+
+- use `127.0.0.1` for process arguments, URLs, requests, and port probes;
+- omit host from active settings and ignore legacy persisted host values;
+- start spawned servers headlessly with the active token;
+- include the active token in embedded server URLs.
+
+For an occupied edit port:
+
+| Listener state | Required behavior |
+|----------------|-------------------|
+| Accepts the active token and enforces authentication | Adopt without spawning. |
+| Incompatible or foreign and can be released | Terminate listening PIDs, confirm release, then spawn a replacement. |
+| Cannot be released | Notify and stop without spawning. |
+
+## 9. Runtime-value policy
+
+Automated validation MUST reject runtime strings, template fragments, and
+non-zero numeric literals outside the approved constants boundary. Reports MUST
+include file and location. Compile-time type/module/property-name literals remain
+excluded from this runtime policy.
+
+## 10. Requirement traceability
 
 | Requirement | Contract section |
 |-------------|------------------|
@@ -77,3 +121,7 @@ Plugin unload and application-exit cleanup remain authoritative:
 | FR-011 | Existing port-allocation contract retained by §1 |
 | FR-012 | §5 |
 | FR-013 | §4 |
+| FR-014–FR-016 | §6 |
+| FR-017–FR-018 | §7 |
+| FR-019–FR-024 | §8 |
+| FR-025 | §9 |

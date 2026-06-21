@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Manage Run-Mode Server Lifecycles
+# Specification Quality Checklist: Run-Server Lifecycle and Consistency Remediation
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-06-21
@@ -31,4 +31,7 @@
 
 ## Notes
 
-- Validation passed on the first review.
+- Validation passed after expanding the feature scope to include the implemented
+  embedded-page recovery, bounded notebook naming, fixed loopback binding,
+  authenticated edit-port conflict handling, and operational-value consistency
+  changes.

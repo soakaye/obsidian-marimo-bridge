@@ -286,6 +286,7 @@ export const TEXT_VENV_BROKEN_HINT = "The existing .venv is broken (its Python i
 // Remaining runtime literals centralized for Constitution Principle VI.
 export const RUNTIME_CONSTANTS = {
 	SLASH: "/",
+	BACKSLASH: "\\",
 	PARENT_PATH: "..",
 	EXTENSION_PY: "py",
 	MARKDOWN_BLOCK_MARIMO: "marimo",

@@ -1,5 +1,17 @@
 export class Notice {
-	constructor(_message: string, _timeout?: number) {}
+	constructor(message: string, _timeout?: number) {
+		noticeMessages.push(message);
+	}
+}
+
+const noticeMessages: string[] = [];
+
+export function resetNoticeMessages(): void {
+	noticeMessages.length = 0;
+}
+
+export function getNoticeMessages(): string[] {
+	return [...noticeMessages];
 }
 
 export class FileSystemAdapter {

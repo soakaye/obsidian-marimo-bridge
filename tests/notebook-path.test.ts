@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 import type { FileSystemAdapter } from "obsidian";
+import { resolveVaultNotebook } from "../src/notebook-path";
 import { ServerManager } from "../src/server-manager";
 import type { MarimoBridgeSettings } from "../src/settings";
 
@@ -92,14 +93,17 @@ test("rejects run notebooks outside the Vault or without a Python file", async (
 		writeFileSync(outside, "print('outside')\n");
 		const textFile = path.join(vault, "note.txt");
 		writeFileSync(textFile, "not python\n");
+		mkdirSync(path.join(vault, "directory.py"));
 		const link = path.join(vault, "linked.py");
 		symlinkSync(outside, link);
 
 		for (const requested of [
+			"",
 			outside,
 			"../outside.py",
 			"missing.py",
 			"note.txt",
+			"directory.py",
 			"linked.py",
 		]) {
 			const { manager, spawnedFile } = configureRunManager(vault);
@@ -112,6 +116,26 @@ test("rejects run notebooks outside the Vault or without a Python file", async (
 		}
 	} finally {
 		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("normalizes equivalent separators and Python extension case", () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-path-"));
+	try {
+		const folder = path.join(vault, "folder");
+		mkdirSync(folder);
+		const notebook = path.join(folder, "Notebook.PY");
+		writeFileSync(notebook, "print('ok')\n");
+
+		const slashPath = resolveVaultNotebook(vault, "folder/Notebook.PY");
+		const backslashPath = resolveVaultNotebook(vault, "folder\\Notebook.PY");
+
+		assert.ok(slashPath);
+		assert.ok(backslashPath);
+		assert.equal(backslashPath.key, slashPath.key);
+		assert.equal(backslashPath.absolutePath, slashPath.absolutePath);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
 	}
 });
 
