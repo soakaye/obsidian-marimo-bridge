@@ -1,6 +1,6 @@
 # Feature Specification: Vault-Scoped Server Adoption & Edit-Server Port Fallback
 
-**Feature Branch**: `014-vault-scoped-server-adoption`
+**Feature Branch**: `015-vault-scoped-server-adoption`
 
 **Created**: 2026-06-21
 
