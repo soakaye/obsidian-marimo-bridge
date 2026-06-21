@@ -30,6 +30,12 @@ export interface SpawnedServerRecord {
 	kind: "edit" | "run";
 	/** Token passed to this server's `--token-password` option. */
 	token: string;
+	/**
+	 * Canonical absolute path of the vault this server serves (its spawn `cwd`).
+	 * Used to scope adoption/reconciliation to this vault so a server started by
+	 * a *different* vault sharing the same port/token is never adopted or killed.
+	 */
+	vaultRoot: string;
 }
 
 /** On-disk shape of the record file. */
@@ -102,7 +108,12 @@ export class ServerRecordStore {
 		}
 	}
 
-	/** A record is usable only with a positive pid and a positive port. */
+	/**
+	 * A record is usable only with a positive pid, a positive port, a non-empty
+	 * ownership token, AND a non-empty vault root. Legacy records written before
+	 * either field existed are unconfirmable and MUST be discarded without
+	 * terminating any process (they fail this check and are dropped on load).
+	 */
 	private static isValid(r: unknown): r is SpawnedServerRecord {
 		if (typeof r !== RUNTIME_CONSTANTS.TYPE_OBJECT || r === null) return false;
 		const rec = r as Partial<SpawnedServerRecord>;
@@ -118,10 +129,13 @@ export class ServerRecordStore {
 		const tokenOk =
 			isString(rec.token) &&
 			rec.token.trim().length > 0;
+		const vaultRootOk =
+			isString(typeof rec.vaultRoot) && rec.vaultRoot.trim().length > 0;
 		return (
 			pidOk &&
 			portOk &&
 			tokenOk &&
+			vaultRootOk &&
 			(rec.kind === MODE_EDIT || rec.kind === MODE_RUN)
 		);
 	}

@@ -124,8 +124,12 @@ export class ServerManager {
 		recordsPath: string
 	) {
 		this.settings = settings;
-		this.vaultPath = adapter.getBasePath();
-		this.nextRunPort = settings.port + OFFSET_ONE;
+		// Canonicalize the vault root once so symlinked vault locations compare
+		// equal to their real path. This same value is the spawn `cwd` AND the
+		// `vaultRoot` persisted into every record, so adoption/reconciliation can
+		// confirm a server belongs to *this* vault by exact path equality.
+		this.vaultPath = canonicalizePath(adapter.getBasePath());
+		this.nextRunPort = settings.port + 1;
 		this.records = new ServerRecordStore(recordsPath);
 		this.serverConfig = this.captureServerConfig();
 	}
@@ -364,7 +368,12 @@ export class ServerManager {
 	// ---------------------------------------------------------------------
 
 	get editBaseUrl(): string {
-		return formatServerBaseUrl(this.settings.port);
+		// Use the port the edit server actually bound (it may have fallen back
+		// from the configured port when that was held by another vault's / a
+		// foreign server). Only when no edit server is running yet do we fall
+		// back to the configured port.
+		const port = this.edit?.port ?? this.settings.port;
+		return `${SCHEME_HTTP}${this.settings.host}:${port.toString()}`;
 	}
 
 	/** URL that opens a specific notebook in the edit server. */
@@ -456,8 +465,8 @@ export class ServerManager {
 			req.setTimeout(
 				SLEEP_DELAY_MS * RUNTIME_CONSTANTS.AUTH_TIMEOUT_MULTIPLIER,
 				() => {
-				req.destroy();
-				resolve(false);
+					req.destroy();
+					resolve(false);
 				}
 			);
 			req.end();
@@ -558,15 +567,23 @@ export class ServerManager {
 
 		this.editSpawning = (async () => {
 			try {
-				const port = this.settings.port;
+				let port = this.settings.port;
 
-				// Reuse only a token-compatible server. Any other listener on the
-				// configured port is evicted before a fresh server is spawned.
-				const initialPortState = await this.resolveEditPort(port);
-				if (initialPortState === null) return false;
-				if (initialPortState) {
-					this.edit = initialPortState;
-					return true;
+				// Reuse a pre-existing server on the configured port ONLY if it is
+				// one *this vault* started — confirmed by a same-vault crash-recovery
+				// record (record-based identity). A healthy server we cannot confirm
+				// as ours (another vault sharing our token, or a foreign server) is
+				// NEVER adopted and NEVER terminated; instead we fall back to a free
+				// port and start our own server there.
+				if (await this.healthOk(port)) {
+					if (await this.adoptableSameVault(port)) {
+						this.edit = { kind: "edit", port, process: null, ready: true };
+						return true;
+					}
+					console.warn(
+						`[MarimoBridge] Port ${port.toString()} is occupied by a server not started by this vault. It will not be terminated; falling back to a free port.`
+					);
+					port = await this.allocateEditPort();
 				}
 
 				// Don't attempt to spawn if marimo isn't installed — fail fast instead
@@ -581,11 +598,12 @@ export class ServerManager {
 					return false;
 				}
 
-				// Final guard against a startup race after executable detection.
-				const finalPortState = await this.resolveEditPort(port);
-				if (finalPortState === null) return false;
-				if (finalPortState) {
-					this.edit = finalPortState;
+				// Final guard against a startup race: another caller (auto-start vs.
+				// a restored view/embed) may have brought OUR server up on this port
+				// between the check above and here. Adopt it (same-vault record)
+				// instead of spawning a second process that would only fail to bind.
+				if (await this.healthOk(port) && await this.adoptableSameVault(port)) {
+					this.edit = { kind: "edit", port, process: null, ready: true };
 					return true;
 				}
 
@@ -621,6 +639,47 @@ export class ServerManager {
 		})();
 
 		return this.editSpawning;
+	}
+
+	/**
+	 * Decide whether a healthy server on `port` may be adopted as *this vault's*
+	 * edit server. Record-based confirmation (no working-directory query): there
+	 * must be a same-vault `edit` record whose PID is the one LISTENing on the
+	 * port and whose token the server still accepts. A server with no matching
+	 * record — e.g. another vault that shares our configured token — is not
+	 * adoptable, so the caller falls back to a free port instead of serving the
+	 * wrong vault's notebooks.
+	 */
+	private async adoptableSameVault(port: number): Promise<boolean> {
+		const record = this.records
+			.load()
+			.find(
+				(r) =>
+					r.kind === "edit" &&
+					r.port === port &&
+					r.vaultRoot === this.vaultPath
+			);
+		if (!record) return false;
+		const pids = await this.findPidsOnPort(port);
+		if (!pids.includes(record.pid)) return false;
+		return this.serverAcceptsOurAuth(port, record.token);
+	}
+
+	/**
+	 * Pick the port for the edit server when the configured port is occupied by a
+	 * server we must not adopt. Scans upward from the configured port, skipping
+	 * ports our run servers hold and ports the OS reports busy, bounded by
+	 * {@link PORT_MAX}. Falls back to the configured port if none is free before
+	 * the ceiling (marimo's bind then fails fast and the existing "did not become
+	 * ready" notice surfaces — FR-008, no silent blank view).
+	 */
+	private async allocateEditPort(): Promise<number> {
+		const used = new Set<number>();
+		for (const s of this.runServers.values()) used.add(s.port);
+		let p = this.settings.port;
+		while (p <= PORT_MAX && (used.has(p) || !(await this.isPortFree(p)))) p++;
+		if (p > PORT_MAX) p = this.settings.port; // exhausted; let marimo report it
+		return p;
 	}
 
 	/**
@@ -781,6 +840,7 @@ export class ServerManager {
 				port,
 				kind,
 				token: this.getActiveToken(),
+				vaultRoot: this.vaultPath,
 			});
 		}
 
@@ -974,7 +1034,10 @@ export class ServerManager {
 		const records: SpawnedServerRecord[] = this.records.load();
 		const results = await Promise.all(
 			records.map(async (r) => {
-				// Three independent confirmations, all required before we kill:
+				// Four independent confirmations, all required before we kill:
+				//   0. the record belongs to THIS vault (guards a record whose vault
+				//      folder was moved/renamed between sessions — a stale path is no
+				//      longer trusted to identify a process),
 				//   1. the recorded PID is still alive,
 				//   2. that SAME PID is the one currently LISTENing on the recorded
 				//      port (guards against a recycled PID that now belongs to an
@@ -983,6 +1046,7 @@ export class ServerManager {
 				// Anything we cannot positively confirm is left untouched (FR-007a/
 				// FR-009).
 				const ours =
+					r.vaultRoot === this.vaultPath &&
 					this.isProcessAlive(r.pid) &&
 					(await this.findPidsOnPort(r.port)).includes(r.pid) &&
 					(await this.confirmOurServer(r.port, r.token));
@@ -1052,6 +1116,19 @@ export class ServerManager {
 /** Promise-based delay helper. */
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve a path to its canonical (symlink-free) absolute form. Falls back to
+ * the input unchanged if it cannot be resolved (e.g. it does not exist yet), so
+ * a vault on a symlinked path still produces a stable, comparable identity.
+ */
+function canonicalizePath(p: string): string {
+	try {
+		return fs.realpathSync(p);
+	} catch {
+		return p;
+	}
 }
 
 function sameServerConfig(
