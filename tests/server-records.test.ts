@@ -16,7 +16,9 @@ test("drops legacy records that do not contain an ownership token", () => {
 		writeFileSync(
 			file,
 			JSON.stringify({
-				records: [{ pid: 1234, port: 2718, kind: "edit" }],
+				records: [
+					{ pid: 1234, port: 2718, kind: "edit", vaultRoot: "/vault" },
+				],
 			})
 		);
 
@@ -28,7 +30,35 @@ test("drops legacy records that do not contain an ownership token", () => {
 	}
 });
 
-test("loads records with a non-empty ownership token", () => {
+test("drops legacy records that do not contain a vault root", () => {
+	const dir = mkdtempSync(path.join(tmpdir(), "marimo-records-"));
+	const file = path.join(dir, "records.json");
+	try {
+		writeFileSync(
+			file,
+			JSON.stringify({
+				records: [
+					{ pid: 1234, port: 2718, kind: "edit", token: "session-token" },
+					{
+						pid: 1235,
+						port: 2719,
+						kind: "edit",
+						token: "session-token",
+						vaultRoot: "   ",
+					},
+				],
+			})
+		);
+
+		const store = new ServerRecordStore(file);
+
+		assert.deepEqual(store.load(), []);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("loads records with a non-empty ownership token and vault root", () => {
 	const dir = mkdtempSync(path.join(tmpdir(), "marimo-records-"));
 	const file = path.join(dir, "records.json");
 	try {
@@ -37,6 +67,7 @@ test("loads records with a non-empty ownership token", () => {
 			port: 2718,
 			kind: "edit",
 			token: "session-token",
+			vaultRoot: "/vault",
 		};
 		writeFileSync(file, JSON.stringify({ records: [record] }));
 

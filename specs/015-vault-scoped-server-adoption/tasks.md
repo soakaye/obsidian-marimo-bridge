@@ -28,7 +28,7 @@ description: "Task list for Vault-Scoped Server Adoption & Edit-Server Port Fall
 
 **Purpose**: Confirm a green baseline before changes.
 
-- [ ] T001 Confirm baseline is green: run `npm install` then `npm run build && npm run lint && npm run test` and note current pass state (no source change).
+- [X] T001 Confirm baseline is green: run `npm install` then `npm run build && npm run lint && npm run test` and note current pass state (no source change).
 
 ---
 
@@ -38,10 +38,10 @@ description: "Task list for Vault-Scoped Server Adoption & Edit-Server Port Fall
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Add required `vaultRoot: string` field to `SpawnedServerRecord` and enforce a non-empty `vaultRoot` in `ServerRecordStore.isValid` (records missing/empty `vaultRoot` are invalid → dropped on load, never used to adopt/kill) in `src/server-records.ts`.
-- [ ] T003 In `ServerManager` constructor, compute the canonical vault root via `fs.realpathSync(adapter.getBasePath())` with a raw-path fallback on error, and use that canonical value as `this.vaultPath` (spawn `cwd` + identity) in `src/server-manager.ts`. Add a brief comment that this canonical value is the same one persisted as each record's `vaultRoot`, so the two names refer to one concept.
-- [ ] T004 Write `vaultRoot: this.vaultPath` into every record created in `spawnServer` (both `edit` and `run` kinds) in `src/server-manager.ts` (depends on T002, T003).
-- [ ] T005 [P] Update `tests/server-records.test.ts`: a record with a valid `vaultRoot` passes validation; a record missing or with empty `vaultRoot` is rejected/pruned on load.
+- [X] T002 Add required `vaultRoot: string` field to `SpawnedServerRecord` and enforce a non-empty `vaultRoot` in `ServerRecordStore.isValid` (records missing/empty `vaultRoot` are invalid → dropped on load, never used to adopt/kill) in `src/server-records.ts`.
+- [X] T003 In `ServerManager` constructor, compute the canonical vault root via `fs.realpathSync(adapter.getBasePath())` with a raw-path fallback on error, and use that canonical value as `this.vaultPath` (spawn `cwd` + identity) in `src/server-manager.ts`. Add a brief comment that this canonical value is the same one persisted as each record's `vaultRoot`, so the two names refer to one concept.
+- [X] T004 Write `vaultRoot: this.vaultPath` into every record created in `spawnServer` (both `edit` and `run` kinds) in `src/server-manager.ts` (depends on T002, T003).
+- [X] T005 [P] Update `tests/server-records.test.ts`: a record with a valid `vaultRoot` passes validation; a record missing or with empty `vaultRoot` is rejected/pruned on load.
 
 **Checkpoint**: Records persist vault identity; foundation ready for user stories.
 
@@ -57,14 +57,14 @@ description: "Task list for Vault-Scoped Server Adoption & Edit-Server Port Fall
 
 > Write these FIRST and ensure they FAIL before implementation.
 
-- [ ] T006 [P] [US1] Test in `tests/server-manager.test.ts`: a healthy server on the configured port with NO matching same-vault record is NOT adopted (and not killed) — `ensureEditServer` declines adoption.
-- [ ] T007 [P] [US1] Test in `tests/server-manager.test.ts`: a healthy server matching a same-vault record (vaultRoot + PID-on-port + token) IS adopted; and `runReconcile` leaves a record whose `vaultRoot` differs from the current vault untouched (no kill) while pruning it.
-- [ ] T008 [P] [US1] Test in `tests/server-manager.test.ts`: FR-007 regression guard — same-vault same-session reuse (the `this.edit` fast path) AND `restartEditServer()` both return ready and continue serving this vault after the adoption/reconcile changes.
+- [X] T006 [P] [US1] Test in `tests/server-manager.test.ts`: a healthy server on the configured port with NO matching same-vault record is NOT adopted (and not killed) — `ensureEditServer` declines adoption.
+- [X] T007 [P] [US1] Test in `tests/server-manager.test.ts`: a healthy server matching a same-vault record (vaultRoot + PID-on-port + token) IS adopted; and `runReconcile` leaves a record whose `vaultRoot` differs from the current vault untouched (no kill) while pruning it.
+- [X] T008 [P] [US1] Test in `tests/server-manager.test.ts`: FR-007 regression guard — same-vault same-session reuse (the `this.edit` fast path) AND `restartEditServer()` both return ready and continue serving this vault after the adoption/reconcile changes.
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Implement record-based `adoptableSameVault(port)` (find an `edit` record with `vaultRoot === this.vaultPath`, confirm its PID is LISTENing on the port via `findPidsOnPort`, and that the server accepts the record token) and gate the `ensureEditServer` adoption branch on it so a non-adoptable occupant is neither adopted nor terminated, in `src/server-manager.ts` (depends on T004).
-- [ ] T010 [US1] Add a vault-root gate (`r.vaultRoot === this.vaultPath`) as a required confirmation in `runReconcile`, alongside the existing alive/PID-on-port/token checks, in `src/server-manager.ts`.
+- [X] T009 [US1] Implement record-based `adoptableSameVault(port)` (find an `edit` record with `vaultRoot === this.vaultPath`, confirm its PID is LISTENing on the port via `findPidsOnPort`, and that the server accepts the record token) and gate the `ensureEditServer` adoption branch on it so a non-adoptable occupant is neither adopted nor terminated, in `src/server-manager.ts` (depends on T004).
+- [X] T010 [US1] Add a vault-root gate (`r.vaultRoot === this.vaultPath`) as a required confirmation in `runReconcile`, alongside the existing alive/PID-on-port/token checks, in `src/server-manager.ts`.
 
 **Checkpoint**: Cross-vault adoption and cross-vault kills are eliminated (MVP).
 
@@ -80,14 +80,14 @@ description: "Task list for Vault-Scoped Server Adoption & Edit-Server Port Fall
 
 > Write these FIRST and ensure they FAIL before implementation.
 
-- [ ] T011 [P] [US2] Test in `tests/server-manager.test.ts`: when the configured port is occupied by a non-ours server, `ensureEditServer` spawns the edit server on a different free port and reports ready.
-- [ ] T012 [P] [US2] Test in `tests/server-manager.test.ts`: `editBaseUrl`/`editFileUrl`/`editHomeUrl` resolve to the running edit server's bound (fallback) port, and fall back to `settings.port` only when no edit server is active.
+- [X] T011 [P] [US2] Test in `tests/server-manager.test.ts`: when the configured port is occupied by a non-ours server, `ensureEditServer` spawns the edit server on a different free port and reports ready.
+- [X] T012 [P] [US2] Test in `tests/server-manager.test.ts`: `editBaseUrl`/`editFileUrl`/`editHomeUrl` resolve to the running edit server's bound (fallback) port, and fall back to `settings.port` only when no edit server is active.
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Implement edit-server free-port allocation reusing the run-server probe (`isPortFree` + upward scan from `settings.port`, skipping in-session ports, bounded by `PORT_MAX`) and use it in `ensureEditServer` when the configured port is occupied but not adoptable; store the actually-bound port on the `edit` `ManagedServer`, in `src/server-manager.ts` (depends on T009).
-- [ ] T014 [US2] Route `editBaseUrl` (and thus `editFileUrl`/`editHomeUrl`) to `this.edit?.port` when an edit server is active, falling back to `settings.port` otherwise, in `src/server-manager.ts`. Confirm consumers in `src/embed-processor.ts` and `src/editor-view.ts` build URLs per use (not cached at load) so the bound port is always reflected.
-- [ ] T015 [US2] Ensure the no-free-port-found path surfaces the existing clear, user-facing notice (no silent blank view) in `src/server-manager.ts`. Verify by reusing the existing "did not become ready" / port-in-use `Notice` rather than adding a new code path; if practical, assert this branch in `tests/server-manager.test.ts`.
+- [X] T013 [US2] Implement edit-server free-port allocation reusing the run-server probe (`isPortFree` + upward scan from `settings.port`, skipping in-session ports, bounded by `PORT_MAX`) and use it in `ensureEditServer` when the configured port is occupied but not adoptable; store the actually-bound port on the `edit` `ManagedServer`, in `src/server-manager.ts` (depends on T009).
+- [X] T014 [US2] Route `editBaseUrl` (and thus `editFileUrl`/`editHomeUrl`) to `this.edit?.port` when an edit server is active, falling back to `settings.port` otherwise, in `src/server-manager.ts`. Confirm consumers in `src/embed-processor.ts` and `src/editor-view.ts` build URLs per use (not cached at load) so the bound port is always reflected.
+- [X] T015 [US2] Ensure the no-free-port-found path surfaces the existing clear, user-facing notice (no silent blank view) in `src/server-manager.ts`. Verify by reusing the existing "did not become ready" / port-in-use `Notice` rather than adding a new code path; if practical, assert this branch in `tests/server-manager.test.ts`.
 
 **Checkpoint**: Both vaults run concurrently — US1 (safety) and US2 (availability) hold together.
 
@@ -113,8 +113,8 @@ description: "Task list for Vault-Scoped Server Adoption & Edit-Server Port Fall
 **Purpose**: Final validation and constitution compliance.
 
 - [ ] T018 [P] Run quickstart Scenarios 1–4 manually against two real vaults and confirm all Expected outcomes (zero cross-vault adoption, zero cross-vault kills, working fallback, unchanged single-vault behavior).
-- [ ] T019 Run `npm run build && npm run lint && npm run test` and confirm all green.
-- [ ] T020 [P] Verify Constitution VI: any new string/number literal introduced (e.g., schema markers) lives in `src/constants.ts`, not hardcoded; reuse existing `PORT_MAX`/probe constants for the fallback scan.
+- [X] T019 Run `npm run build && npm run lint && npm run test` and confirm all green.
+- [X] T020 [P] Verify Constitution VI: any new string/number literal introduced (e.g., schema markers) lives in `src/constants.ts`, not hardcoded; reuse existing `PORT_MAX`/probe constants for the fallback scan.
 
 ---
 
