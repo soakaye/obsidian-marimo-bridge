@@ -36,5 +36,5 @@ npm run lint    # eslint (flat config, eslint-plugin-obsidianmd)
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/017-fix-review-findings/plan.md
+at specs/018-replace-console-ipc/plan.md
 <!-- SPECKIT END -->
