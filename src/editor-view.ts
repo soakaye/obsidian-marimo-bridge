@@ -20,6 +20,7 @@ import {
 	ATTR_PARTITION,
 	ATTR_SRC,
 	EVENT_DOM_READY,
+	EVENT_DID_START_NAVIGATION,
 	EVENT_WILL_NAVIGATE,
 	EVENT_NEW_WINDOW,
 	EVENT_DID_NAVIGATE,
@@ -28,8 +29,9 @@ import {
 	WEBVIEW_LOAD_WATCHDOG_MS,
 	WEBVIEW_MAX_LOAD_RETRIES,
 	ERR_LOAD_ABORTED,
-	MARIMO_OPEN_SENTINEL,
 	INJECTION_SCRIPT,
+	BRIDGE_MESSAGE_TYPE_OPEN,
+	BRIDGE_NEXT_MESSAGE_SCRIPT,
 	URL_ABOUT_BLANK,
 	PROTOCOL_JAVASCRIPT,
 	SCHEME_CUSTOM,
@@ -74,8 +76,14 @@ interface ElectronWindow {
 }
 
 interface MarimoWebviewElement extends HTMLElement {
-	executeJavaScript(script: string): unknown;
+	executeJavaScript(script: string): Promise<unknown>;
 	reload(): void;
+}
+
+interface BridgeOpenMessage {
+	type: typeof BRIDGE_MESSAGE_TYPE_OPEN;
+	url: string;
+	disposition?: string;
 }
 
 interface WebviewConsoleMessageEvent extends Event {
@@ -83,6 +91,33 @@ interface WebviewConsoleMessageEvent extends Event {
 	message: string;
 	line: number;
 	sourceId: string;
+}
+
+interface WebviewDidStartNavigationEvent extends Event {
+	isInPlace: boolean;
+	isMainFrame: boolean;
+}
+
+function isString(value: unknown): value is string {
+	return typeof value === RUNTIME_CONSTANTS.TYPE_STRING;
+}
+
+function isBridgeOpenMessage(value: unknown): value is BridgeOpenMessage {
+	if (
+		typeof value !== RUNTIME_CONSTANTS.TYPE_OBJECT ||
+		value === null
+	) {
+		return false;
+	}
+	const candidate = value as Record<string, unknown>;
+	const url = candidate.url;
+	const disposition = candidate.disposition;
+	return (
+		candidate.type === BRIDGE_MESSAGE_TYPE_OPEN &&
+		isString(url) &&
+		url.length > 0 &&
+		(disposition === undefined || isString(disposition))
+	);
 }
 
 export class MarimoEditorView extends ItemView {
@@ -331,20 +366,76 @@ export function createMarimoWebview(
 		}
 	};
 
+	const routeOpenRequest = async (
+		targetUrl: string,
+		disposition?: string
+	): Promise<void> => {
+		if (shouldIntercept(targetUrl)) {
+			await handleLinkClick(targetUrl, disposition);
+			return;
+		}
+		try {
+			const base = el.getAttribute(ATTR_SRC) ?? undefined;
+			const absoluteUrl = addTokenToUrl(
+				plugin,
+				new URL(targetUrl, base).href
+			);
+			el.setAttribute(ATTR_SRC, absoluteUrl);
+		} catch (e) {
+			console.error(
+				RUNTIME_CONSTANTS.LOG_RELATIVE_URL_FAILED,
+				targetUrl,
+				e
+			);
+		}
+	};
+
 	// Inject the link/popup interception into the guest page. Obsidian strips
-	// <webview> preload and forces sandbox + no node integration, so the only
-	// way to run code in the guest is executeJavaScript, and the only way for
-	// the guest to call back is console (see INJECTION_SCRIPT / the
-	// console-message handler below). Re-run on every dom-ready (full reloads)
-	// — the script self-guards against double injection.
+	// <webview> preload and forces sandbox + no node integration. The guest
+	// therefore exposes a Promise-returning FIFO bridge through injected code,
+	// which the host awaits via executeJavaScript. Re-run on every dom-ready
+	// (full reloads); the script self-guards against double injection.
 	let domReady = false;
+	let bridgeGeneration = 0;
+	const isCurrentBridge = (generation: number): boolean =>
+		generation === bridgeGeneration && el.isConnected;
+	const runBridge = async (generation: number): Promise<void> => {
+		try {
+			await el.executeJavaScript(INJECTION_SCRIPT);
+		} catch (e) {
+			if (isCurrentBridge(generation)) {
+				console.error(RUNTIME_CONSTANTS.LOG_INJECTION_FAILED, e);
+			}
+			return;
+		}
+		if (!isCurrentBridge(generation)) return;
+		while (isCurrentBridge(generation)) {
+			let value: unknown;
+			try {
+				value = await el.executeJavaScript(
+					BRIDGE_NEXT_MESSAGE_SCRIPT
+				);
+			} catch {
+				return;
+			}
+			if (!isCurrentBridge(generation)) return;
+			if (!isBridgeOpenMessage(value)) continue;
+			await routeOpenRequest(value.url, value.disposition);
+		}
+	};
+	el.addEventListener(
+		EVENT_DID_START_NAVIGATION,
+		(event: Event) => {
+			const ev = event as WebviewDidStartNavigationEvent;
+			if (ev.isMainFrame && !ev.isInPlace) {
+				bridgeGeneration++;
+			}
+		}
+	);
 	el.addEventListener(EVENT_DOM_READY, () => {
 		domReady = true;
-		try {
-			void el.executeJavaScript(INJECTION_SCRIPT);
-		} catch (e) {
-			console.error(RUNTIME_CONSTANTS.LOG_INJECTION_FAILED, e);
-		}
+		const generation = ++bridgeGeneration;
+		void runBridge(generation);
 	});
 
 	// Recover from blank webviews. On view restore the guest sometimes attaches
@@ -423,18 +514,7 @@ export function createMarimoWebview(
 
 		ev.preventDefault(); // Stop default popup window creation
 
-		if (shouldIntercept(ev.url)) {
-			void handleLinkClick(ev.url, ev.disposition);
-		} else {
-			// Internal local popup navigation (like "new notebook"): load in same webview
-			try {
-				const base = el.getAttribute(ATTR_SRC) ?? undefined;
-				const absoluteUrl = addTokenToUrl(plugin, new URL(ev.url, base).href);
-				el.setAttribute(ATTR_SRC, absoluteUrl);
-			} catch (e) {
-				console.error(RUNTIME_CONSTANTS.LOG_RELATIVE_URL_FAILED, ev.url, e);
-			}
-		}
+		void routeOpenRequest(ev.url, ev.disposition);
 	});
 
 	let authRetryCount = 0;
@@ -470,32 +550,10 @@ export function createMarimoWebview(
 		}
 	});
 
-	// The injected script reports navigations as a single sentinel-prefixed
-	// console line; intercept those here and route them, forwarding everything
-	// else to the Obsidian console for debugging.
+	// Console output is diagnostics only; navigation control messages use the
+	// Promise-based guest bridge installed above.
 	el.addEventListener(EVENT_CONSOLE_MESSAGE, (event: Event) => {
 		const ev = event as WebviewConsoleMessageEvent;
-
-		if (ev.message.startsWith(MARIMO_OPEN_SENTINEL)) {
-			const json = ev.message.slice(MARIMO_OPEN_SENTINEL.length).trim();
-			try {
-				const data = JSON.parse(json) as { url?: string; disposition?: string };
-				if (data.url) {
-					if (shouldIntercept(data.url)) {
-						void handleLinkClick(data.url, data.disposition);
-					} else {
-						// Internal local popup navigation (like "new notebook"):
-						// load in the same webview instead of spawning a window.
-						const base = el.getAttribute(ATTR_SRC) ?? undefined;
-						const absoluteUrl = addTokenToUrl(plugin, new URL(data.url, base).href);
-						el.setAttribute(ATTR_SRC, absoluteUrl);
-					}
-				}
-			} catch (e) {
-				console.error(RUNTIME_CONSTANTS.LOG_OPEN_MESSAGE_PARSE_FAILED, ev.message, e);
-			}
-			return;
-		}
 
 		const prefix = formatWebviewConsoleLog(
 			ev.message,

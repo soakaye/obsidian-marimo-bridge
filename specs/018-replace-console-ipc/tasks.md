@@ -25,9 +25,9 @@ test.
 **Purpose**: Confirm the current branch, test baseline, and protected scope
 before changing bridge behavior.
 
-- [ ] T001 Run `npm test`, `npm run build`, and `npm run lint` from `package.json` and record any pre-existing failure before modifying `src/` or `tests/`
-- [ ] T002 Verify `specs/017-fix-review-findings/` has no branch-local diff and record its current tree state for the final scope audit
-- [ ] T003 [P] Review `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts` against `specs/018-replace-console-ipc/contracts/webview-bridge.md` and list the existing sentinel transport, routing branches, and lifecycle events that must be preserved or replaced
+- [X] T001 Run `npm test`, `npm run build`, and `npm run lint` from `package.json` and record any pre-existing failure before modifying `src/` or `tests/`
+- [X] T002 Verify `specs/017-fix-review-findings/` has no branch-local diff and record its current tree state for the final scope audit
+- [X] T003 [P] Review `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts` against `specs/018-replace-console-ipc/contracts/webview-bridge.md` and list the existing sentinel transport, routing branches, and lifecycle events that must be preserved or replaced
 
 ---
 
@@ -38,9 +38,9 @@ before changing bridge behavior.
 **⚠️ CRITICAL**: Complete this phase before adding story-specific production
 behavior.
 
-- [ ] T004 Update `FakeWebview.executeJavaScript` in `tests/editor-view.test.ts` to return configurable `Promise<unknown>` results while retaining an ordered record of every executed script
-- [ ] T005 Add reusable deferred-Promise and async-flush helpers in `tests/editor-view.test.ts` for controlling bridge installation, pending receives, resolution order, and rejection without timer sleeps
-- [ ] T006 Run the editor-view cases through `npm test` from `package.json` and adjust only the test fake compatibility in `tests/editor-view.test.ts` until the existing pre-feature tests pass
+- [X] T004 Update `FakeWebview.executeJavaScript` in `tests/editor-view.test.ts` to return configurable `Promise<unknown>` results while retaining an ordered record of every executed script
+- [X] T005 Add reusable deferred-Promise and async-flush helpers in `tests/editor-view.test.ts` for controlling bridge installation, pending receives, resolution order, and rejection without timer sleeps
+- [X] T006 Run the editor-view cases through `npm test` from `package.json` and adjust only the test fake compatibility in `tests/editor-view.test.ts` until the existing pre-feature tests pass
 
 **Checkpoint**: Existing editor behavior passes with a Promise-capable fake
 webview, and story tests can deterministically control asynchronous boundaries.
@@ -59,17 +59,17 @@ handlers run while sentinel-looking console output remains diagnostic-only.
 
 ### Tests for User Story 1
 
-- [ ] T007 [US1] Add failing tests in `tests/editor-view.test.ts` proving `dom-ready` awaits bridge installation before evaluating the first next-message expression
-- [ ] T008 [US1] Add failing structured-message routing tests in `tests/editor-view.test.ts` for a local marimo notebook, a local non-Python workspace file, an external HTTP(S) URL, an unsafe external protocol, and an internal local URL that remains in the same webview with its token
-- [ ] T009 [US1] Add failing transport-separation tests in `tests/editor-view.test.ts` asserting `INJECTION_SCRIPT` contains neither `MARIMO_OPEN_SENTINEL` nor `console.log`, and that former-sentinel text received through `console-message` is forwarded as an ordinary diagnostic
-- [ ] T010 [US1] Run `npm test` from `package.json` and confirm the new User Story 1 cases fail because the Promise bridge and structured host routing do not yet exist
+- [X] T007 [US1] Add failing tests in `tests/editor-view.test.ts` proving `dom-ready` awaits bridge installation before evaluating the first next-message expression
+- [X] T008 [US1] Add failing structured-message routing tests in `tests/editor-view.test.ts` for a local marimo notebook, a local non-Python workspace file, an external HTTP(S) URL, an unsafe external protocol, and an internal local URL that remains in the same webview with its token
+- [X] T009 [US1] Add failing transport-separation tests in `tests/editor-view.test.ts` asserting `INJECTION_SCRIPT` contains neither `MARIMO_OPEN_SENTINEL` nor `console.log`, and that former-sentinel text received through `console-message` is forwarded as an ordinary diagnostic
+- [X] T010 [US1] Run `npm test` from `package.json` and confirm the new User Story 1 cases fail because the Promise bridge and structured host routing do not yet exist
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Replace the sentinel transport in `src/constants.ts` by removing `MARIMO_OPEN_SENTINEL` and `LOG_OPEN_MESSAGE_PARSE_FAILED`, defining the open-message and next-message runtime constants, and rewriting `INJECTION_SCRIPT` to install an idempotent guest queue with `enqueue()` and `nextMessage()` for `window.open` and separate-target anchor clicks
-- [ ] T012 [US1] Change the private webview boundary in `src/editor-view.ts` so `executeJavaScript(script)` returns `Promise<unknown>`, add the bounded structured open-message type guard, and centralize the existing open-request routing used by both native `new-window` events and bridge messages
-- [ ] T013 [US1] Implement the `dom-ready` installation sequence and serial next-message receive loop in `src/editor-view.ts`, awaiting installation before reception and removing all sentinel interpretation from the `console-message` handler
-- [ ] T014 [US1] Run the targeted editor-view suite through `npm test` from `package.json` and resolve User Story 1 failures only in `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts`
+- [X] T011 [US1] Replace the sentinel transport in `src/constants.ts` by removing `MARIMO_OPEN_SENTINEL` and `LOG_OPEN_MESSAGE_PARSE_FAILED`, defining the open-message and next-message runtime constants, and rewriting `INJECTION_SCRIPT` to install an idempotent guest queue with `enqueue()` and `nextMessage()` for `window.open` and separate-target anchor clicks
+- [X] T012 [US1] Change the private webview boundary in `src/editor-view.ts` so `executeJavaScript(script)` returns `Promise<unknown>`, add the bounded structured open-message type guard, and centralize the existing open-request routing used by both native `new-window` events and bridge messages
+- [X] T013 [US1] Implement the `dom-ready` installation sequence and serial next-message receive loop in `src/editor-view.ts`, awaiting installation before reception and removing all sentinel interpretation from the `console-message` handler
+- [X] T014 [US1] Run the targeted editor-view suite through `npm test` from `package.json` and resolve User Story 1 failures only in `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts`
 
 **Checkpoint**: Supported embedded links route through structured messages with
 zero console-based control transport, while ordinary guest diagnostics retain
@@ -88,16 +88,16 @@ message is handled once in original order with no polling.
 
 ### Tests for User Story 2
 
-- [ ] T015 [US2] Add failing FIFO tests in `tests/editor-view.test.ts` that deliver at least 20 pre-queued structured messages and assert exact once-only routing order
-- [ ] T016 [US2] Add failing pending-wait tests in `tests/editor-view.test.ts` proving one unresolved receive remains idle until the next message and no timer-based polling or repeated receive call occurs
-- [ ] T017 [US2] Add failing validation tests in `tests/editor-view.test.ts` for null, primitive, unknown-type, empty-URL, and non-string-disposition values followed by a valid message that must still route
-- [ ] T018 [US2] Run `npm test` from `package.json` and confirm the new User Story 2 cases expose any FIFO, duplicate-receive, or invalid-message continuation gaps
+- [X] T015 [US2] Add failing FIFO tests in `tests/editor-view.test.ts` that deliver at least 20 pre-queued structured messages and assert exact once-only routing order
+- [X] T016 [US2] Add failing pending-wait tests in `tests/editor-view.test.ts` proving one unresolved receive remains idle until the next message and no timer-based polling or repeated receive call occurs
+- [X] T017 [US2] Add failing validation tests in `tests/editor-view.test.ts` for null, primitive, unknown-type, empty-URL, and non-string-disposition values followed by a valid message that must still route
+- [X] T018 [US2] Run `npm test` from `package.json` and confirm the new User Story 2 cases expose any FIFO, duplicate-receive, or invalid-message continuation gaps
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Complete the guest FIFO and single-pending-resolver invariants in `src/constants.ts` so queued messages shift oldest-first and a waiting receiver is resolved directly without polling
-- [ ] T020 [US2] Complete serial host consumption and invalid-value continuation in `src/editor-view.ts` so one message is awaited and fully routed before the next receive begins
-- [ ] T021 [US2] Run the targeted editor-view suite through `npm test` from `package.json` and resolve User Story 2 failures only in `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts`
+- [X] T019 [US2] Complete the guest FIFO and single-pending-resolver invariants in `src/constants.ts` so queued messages shift oldest-first and a waiting receiver is resolved directly without polling
+- [X] T020 [US2] Complete serial host consumption and invalid-value continuation in `src/editor-view.ts` so one message is awaited and fully routed before the next receive begins
+- [X] T021 [US2] Run the targeted editor-view suite through `npm test` from `package.json` and resolve User Story 2 failures only in `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts`
 
 **Checkpoint**: A burst of at least 20 messages is delivered exactly once in
 FIFO order, and malformed values neither navigate nor block later valid work.
@@ -115,18 +115,18 @@ rejection; verify only the current connected generation can route.
 
 ### Tests for User Story 3
 
-- [ ] T022 [US3] Add failing generation tests in `tests/editor-view.test.ts` proving a non-in-place main-frame `did-start-navigation` invalidates an old deferred result before the next `dom-ready`
-- [ ] T023 [US3] Add failing navigation-boundary tests in `tests/editor-view.test.ts` proving subframe and in-place `did-start-navigation` events do not invalidate the current receive cycle
-- [ ] T024 [US3] Add failing lifecycle tests in `tests/editor-view.test.ts` proving a new `dom-ready` starts a fresh generation, a detached webview ignores late resolution, and receive rejection during navigation or teardown causes no routing or unhandled rejection
-- [ ] T025 [US3] Add failing installation-error tests in `tests/editor-view.test.ts` proving a rejection is logged only for the same current connected generation and remains silent after invalidation or detachment
-- [ ] T026 [US3] Run `npm test` from `package.json` and confirm the new User Story 3 cases fail before generation-aware lifecycle handling is implemented
+- [X] T022 [US3] Add failing generation tests in `tests/editor-view.test.ts` proving a non-in-place main-frame `did-start-navigation` invalidates an old deferred result before the next `dom-ready`
+- [X] T023 [US3] Add failing navigation-boundary tests in `tests/editor-view.test.ts` proving subframe and in-place `did-start-navigation` events do not invalidate the current receive cycle
+- [X] T024 [US3] Add failing lifecycle tests in `tests/editor-view.test.ts` proving a new `dom-ready` starts a fresh generation, a detached webview ignores late resolution, and receive rejection during navigation or teardown causes no routing or unhandled rejection
+- [X] T025 [US3] Add failing installation-error tests in `tests/editor-view.test.ts` proving a rejection is logged only for the same current connected generation and remains silent after invalidation or detachment
+- [X] T026 [US3] Run `npm test` from `package.json` and confirm the new User Story 3 cases fail before generation-aware lifecycle handling is implemented
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Add the `did-start-navigation` runtime event constant in `src/constants.ts` and preserve all new non-empty strings and non-zero numeric values under the existing constant-externalization policy
-- [ ] T028 [US3] Implement guest generation invalidation and post-await generation/connection guards in `src/editor-view.ts`, invalidating only non-in-place main-frame navigation and starting a fresh generation on each `dom-ready`
-- [ ] T029 [US3] Separate current-context installation error reporting from quiet receive-loop termination in `src/editor-view.ts` so reload, navigation, detachment, and closure do not produce unhandled or noisy failures
-- [ ] T030 [US3] Run the targeted editor-view suite through `npm test` from `package.json` and resolve User Story 3 failures only in `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts`
+- [X] T027 [US3] Add the `did-start-navigation` runtime event constant in `src/constants.ts` and preserve all new non-empty strings and non-zero numeric values under the existing constant-externalization policy
+- [X] T028 [US3] Implement guest generation invalidation and post-await generation/connection guards in `src/editor-view.ts`, invalidating only non-in-place main-frame navigation and starting a fresh generation on each `dom-ready`
+- [X] T029 [US3] Separate current-context installation error reporting from quiet receive-loop termination in `src/editor-view.ts` so reload, navigation, detachment, and closure do not produce unhandled or noisy failures
+- [X] T030 [US3] Run the targeted editor-view suite through `npm test` from `package.json` and resolve User Story 3 failures only in `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts`
 
 **Checkpoint**: Only the current connected guest generation can route messages;
 reload, navigation, and closure terminate obsolete receives safely.
@@ -138,12 +138,12 @@ reload, navigation, and closure terminate obsolete receives safely.
 **Purpose**: Validate the complete feature, constitution boundaries, and manual
 user journeys.
 
-- [ ] T031 Run the complete regression suite with `npm test` from `package.json` and resolve only feature-scoped failures in `src/constants.ts`, `src/editor-view.ts`, or `tests/editor-view.test.ts`
-- [ ] T032 Run the production type-check and bundle with `npm run build` from `package.json` and confirm `esbuild.config.mjs` still externalizes Obsidian, Electron, and Node modules
-- [ ] T033 Run `npm run lint` from `package.json` and confirm `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts` pass without new suppression directives
-- [ ] T034 [P] Audit `git diff -- src/constants.ts src/editor-view.ts tests/editor-view.test.ts package.json esbuild.config.mjs specs/017-fix-review-findings` against `specs/018-replace-console-ipc/contracts/webview-bridge.md`, confirming no dependency, preload, polling timer, port, listener, HTTP/WebSocket transport, main-process API, persistence, public API, server lifecycle change, or specification 017 edit
-- [ ] T035 Execute every automated and manual scenario in `specs/018-replace-console-ipc/quickstart.md`, recording any environment limitation without weakening its expected outcomes
-- [ ] T036 Review `specs/018-replace-console-ipc/spec.md`, `specs/018-replace-console-ipc/plan.md`, and the final implementation diff to confirm FR-001 through FR-017 and SC-001 through SC-007 are covered
+- [X] T031 Run the complete regression suite with `npm test` from `package.json` and resolve only feature-scoped failures in `src/constants.ts`, `src/editor-view.ts`, or `tests/editor-view.test.ts`
+- [X] T032 Run the production type-check and bundle with `npm run build` from `package.json` and confirm `esbuild.config.mjs` still externalizes Obsidian, Electron, and Node modules
+- [X] T033 Run `npm run lint` from `package.json` and confirm `src/constants.ts`, `src/editor-view.ts`, and `tests/editor-view.test.ts` pass without new suppression directives
+- [X] T034 [P] Audit `git diff -- src/constants.ts src/editor-view.ts tests/editor-view.test.ts package.json esbuild.config.mjs specs/017-fix-review-findings` against `specs/018-replace-console-ipc/contracts/webview-bridge.md`, confirming no dependency, preload, polling timer, port, listener, HTTP/WebSocket transport, main-process API, persistence, public API, server lifecycle change, or specification 017 edit
+- [X] T035 Execute every automated and manual scenario in `specs/018-replace-console-ipc/quickstart.md`, recording any environment limitation without weakening its expected outcomes
+- [X] T036 Review `specs/018-replace-console-ipc/spec.md`, `specs/018-replace-console-ipc/plan.md`, and the final implementation diff to confirm FR-001 through FR-017 and SC-001 through SC-007 are covered
 
 ---
 

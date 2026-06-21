@@ -109,3 +109,19 @@ Review the final diff and confirm:
 - No preload file, dependency, port, listener, HTTP/WebSocket service,
   main-process API, persisted data, or server-manager change was added.
 - The behaviors match [contracts/webview-bridge.md](./contracts/webview-bridge.md).
+
+## Validation Record — 2026-06-22
+
+- Automated validation completed with 66 passing tests, a successful production
+  build, and a clean lint run.
+- Obsidian Desktop loaded the rebuilt plugin without captured runtime errors and
+  rendered two connected marimo webviews.
+- Calling `window.open()` inside the live guest for
+  `02_documents/untitled_marimo_3.py` created the expected Obsidian marimo tab,
+  confirming the Promise bridge on the real Electron boundary.
+- The remaining workspace-file, external-browser, repeated-reload, and
+  close-while-waiting manual scenarios could not be completed because the
+  Obsidian CLI repeatedly lost its running-app endpoint after the successful
+  notebook-routing check. Their expected outcomes remain covered by the
+  automated structured-routing, generation, detachment, and rejection tests;
+  rerun these manual scenarios when a stable Desktop CLI session is available.

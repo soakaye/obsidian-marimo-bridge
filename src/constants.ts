@@ -113,11 +113,15 @@ export const ATTR_ALLOWPOPUPS = "allowpopups";
 export const ATTR_PARTITION = "partition";
 export const ATTR_SRC = "src";
 export const EVENT_DOM_READY = "dom-ready";
+export const EVENT_DID_START_NAVIGATION = "did-start-navigation";
 export const EVENT_WILL_NAVIGATE = "will-navigate";
 export const EVENT_NEW_WINDOW = "new-window";
 export const EVENT_DID_NAVIGATE = "did-navigate";
 export const EVENT_CONSOLE_MESSAGE = "console-message";
 export const EVENT_DID_FAIL_LOAD = "did-fail-load";
+export const BRIDGE_MESSAGE_TYPE_OPEN = "open";
+export const BRIDGE_NEXT_MESSAGE_SCRIPT =
+	"window.__marimoBridge.nextMessage()";
 
 /**
  * On view restore (and occasionally cold start) an Electron `<webview>` can
@@ -130,44 +134,55 @@ export const WEBVIEW_MAX_LOAD_RETRIES = 3;
 export const ERR_LOAD_ABORTED = -3;
 
 /**
- * Sentinel that prefixes the one line the injected script logs to report a
- * navigation. The host watches `console-message` for this prefix.
- *
- * Why `console.log` and not a preload + `ipcRenderer.sendToHost`: Obsidian's
- * `will-attach-webview` handler deletes `preload`/`preloadURL` and forces
- * `sandbox=true, nodeIntegration=false` on every `<webview>`, so neither a
- * preload nor `ipcRenderer` can run in the guest. The only host-bound channel
- * a guest page has is `console`, surfaced to the host as `console-message`.
- * The trailing space and unusual prefix keep collisions with marimo's own
- * logs vanishingly unlikely.
- */
-export const MARIMO_OPEN_SENTINEL = "[MarimoBridge-Open] ";
-
-/**
  * Script injected into the guest page (main world) via
  * `webview.executeJavaScript()` on `dom-ready`. It overrides `window.open`
  * (marimo's home page creates new notebooks via `window.open(url, "_blank")`,
  * which modern Electron no longer surfaces as a `<webview>` "new-window"
  * event) and intercepts link clicks that target a new window/tab, reporting
- * each via a single sentinel-prefixed `console.log`. The host then routes them
- * into Obsidian (other notebooks → marimo tabs, external URLs → system
- * browser).
+ * each through a guest-local FIFO bridge. The host awaits `nextMessage()`
+ * through `executeJavaScript()` and routes structured messages into Obsidian
+ * (other notebooks → marimo tabs, external URLs → system browser).
  *
  * Idempotent: a re-injection (e.g. after a full page reload re-fires
  * `dom-ready`) is a no-op thanks to the `__marimoBridgeInjected` guard.
  */
 export const INJECTION_SCRIPT = `(function () {
-	if (window.__marimoBridgeInjected) return;
+	if (window.__marimoBridgeInjected) return true;
 	window.__marimoBridgeInjected = true;
+
+	var messages = [];
+	var waiter = null;
+
+	function enqueue(message) {
+		if (waiter) {
+			var resolve = waiter;
+			waiter = null;
+			resolve(message);
+			return;
+		}
+		messages.push(message);
+	}
+
+	window.__marimoBridge = {
+		nextMessage: function () {
+			if (messages.length > 0) {
+				return Promise.resolve(messages.shift());
+			}
+			return new Promise(function (resolve) {
+				waiter = resolve;
+			});
+		}
+	};
 
 	function emit(url, disposition) {
 		if (!url) return;
 		try {
 			var absolute = new URL(url, window.location.href).href;
-			console.log(
-				"${MARIMO_OPEN_SENTINEL}" +
-					JSON.stringify({ url: absolute, disposition: disposition || "default" })
-			);
+			enqueue({
+				type: "${BRIDGE_MESSAGE_TYPE_OPEN}",
+				url: absolute,
+				disposition: disposition || "default"
+			});
 		} catch (e) {
 			// Ignore malformed URLs.
 		}
@@ -203,6 +218,8 @@ export const INJECTION_SCRIPT = `(function () {
 		},
 		true
 	);
+
+	return true;
 })();
 `;
 
@@ -334,7 +351,6 @@ export const RUNTIME_CONSTANTS = {
 	LOG_AUTH_RETRY: "[MarimoBridge] Landed on login page, retrying with token. Attempt:",
 	LOG_AUTH_LIMIT: "[MarimoBridge] Auth retry limit reached. Showing login page.",
 	LOG_NAVIGATE_PARSE_FAILED: "[MarimoBridge] Failed to parse did-navigate URL:",
-	LOG_OPEN_MESSAGE_PARSE_FAILED: "[MarimoBridge] Failed to parse open message:",
 	LOG_PIP_INSTALL_FAILED: "[marimo-bridge] pip install failed:",
 	LOG_EDIT_SERVER_EXCEPTION: "[MarimoBridge] Exception in ensureEditServer:",
 	LOG_RECORD_WRITE_FAILED: "[MarimoBridge] Failed to write server records:",
