@@ -5,6 +5,7 @@
  */
 
 .marimo-bridge-view {
+	position: relative;
 	height: 100%;
 	padding: 0;
 	overflow: hidden;
@@ -29,7 +30,44 @@
 	font-style: italic;
 }
 
+.marimo-bridge-loading-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 0.75em;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	background: var(--background-primary);
+	font-style: normal;
+	pointer-events: auto;
+}
+
+.marimo-bridge-loading-spinner {
+	width: 1.5em;
+	height: 1.5em;
+	border: 2px solid var(--background-modifier-border);
+	border-top-color: var(--interactive-accent);
+	border-radius: 50%;
+	animation: marimo-bridge-spin 0.8s linear infinite;
+}
+
+@keyframes marimo-bridge-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.marimo-bridge-loading-spinner {
+		animation: none;
+	}
+}
+
 .marimo-bridge-embed {
+	position: relative;
 	width: 100%;
 	margin: 0.5em 0;
 	border: 1px solid var(--background-modifier-border);

@@ -44,11 +44,17 @@ class FakeWebview extends EventTarget {
 	isConnected = false;
 	reloadCount = 0;
 	executedScripts: string[] = [];
+	classNames: string[] = [];
 	style = {
-		setProperty: (_name: string, _value: string): void => {},
+		values: new Map<string, string>(),
+		setProperty(name: string, value: string): void {
+			this.values.set(name, value);
+		},
 	};
 
-	addClass(_name: string): void {}
+	addClass(name: string): void {
+		this.classNames.push(name);
+	}
 
 	getAttribute(name: string): string | null {
 		return this.attributes.get(name) ?? null;
@@ -56,6 +62,10 @@ class FakeWebview extends EventTarget {
 
 	setAttribute(name: string, value: string): void {
 		this.attributes.set(name, value);
+	}
+
+	removeAttribute(name: string): void {
+		this.attributes.delete(name);
 	}
 
 	reload(): void {
@@ -72,12 +82,50 @@ class FakeWebview extends EventTarget {
 	}
 }
 
+interface FakeElementOptions {
+	cls?: string | string[];
+	text?: string;
+	attr?: Record<string, string>;
+}
+
+class FakeStatusElement {
+	attributes = new Map<string, string>();
+	children: FakeStatusElement[] = [];
+	classNames: string[];
+	text: string;
+	removed = false;
+
+	constructor(options: FakeElementOptions = {}) {
+		this.classNames = Array.isArray(options.cls)
+			? [...options.cls]
+			: options.cls
+				? [options.cls]
+				: [];
+		this.text = options.text ?? "";
+		for (const [name, value] of Object.entries(options.attr ?? {})) {
+			this.attributes.set(name, value);
+		}
+	}
+
+	createSpan(options: FakeElementOptions = {}): FakeStatusElement {
+		const child = new FakeStatusElement(options);
+		this.children.push(child);
+		return child;
+	}
+
+	remove(): void {
+		this.removed = true;
+	}
+}
+
 interface WebviewHarness {
 	webview: FakeWebview;
 	openedMarimo: string[];
 	openedWorkspace: string[];
 	openedExternal: string[];
 	parent: HTMLElement;
+	statuses: FakeStatusElement[];
+	appendOrder: string[];
 	plugin: MarimoBridgePlugin;
 }
 
@@ -108,20 +156,28 @@ function evaluateGuestBridge(): { bridge: GuestBridge; window: GuestWindow } {
 	return { bridge: guestWindow.__marimoBridge, window: guestWindow };
 }
 
-function createWebviewHarness(): WebviewHarness {
+function createWebviewHarness(timers?: (() => void)[]): WebviewHarness {
 	const webview = new FakeWebview();
 	const openedMarimo: string[] = [];
 	const openedWorkspace: string[] = [];
 	const openedExternal: string[] = [];
+	const statuses: FakeStatusElement[] = [];
+	const appendOrder: string[] = [];
 	const parent = {
 		ownerDocument: {
 			createElement: () => webview,
 		},
 		appendChild: (child: FakeWebview) => {
+			appendOrder.push("webview");
 			child.isConnected = true;
 			return child;
 		},
-		createDiv: () => ({}),
+		createDiv: (options: FakeElementOptions = {}) => {
+			appendOrder.push("status");
+			const status = new FakeStatusElement(options);
+			statuses.push(status);
+			return status;
+		},
 	} as unknown as HTMLElement;
 	const plugin = {
 		servers: {
@@ -148,7 +204,11 @@ function createWebviewHarness(): WebviewHarness {
 					},
 				},
 			}),
-			setTimeout: () => 0,
+			setTimeout: (callback: () => void) => {
+				if (!timers) return 0;
+				timers.push(callback);
+				return timers.length;
+			},
 			clearTimeout: () => {},
 		},
 	});
@@ -158,6 +218,8 @@ function createWebviewHarness(): WebviewHarness {
 		openedWorkspace,
 		openedExternal,
 		parent,
+		statuses,
+		appendOrder,
 		plugin,
 	};
 }
@@ -189,6 +251,154 @@ function dispatchNavigationStart(
 	webview.dispatchEvent(event);
 }
 
+test("shows an accessible loading status until the initial webview is ready", () => {
+	const harness = createWebviewHarness();
+
+	createMarimoWebview(
+		harness.plugin,
+		harness.parent,
+		"http://127.0.0.1:2718/",
+		"persist:test"
+	);
+
+	assert.deepEqual(harness.appendOrder.slice(0, 2), ["status", "webview"]);
+	assert.equal(harness.statuses.length, 1);
+	const status = harness.statuses[0];
+	assert.ok(status);
+	assert.equal(status.text, "Loading marimo…");
+	assert.ok(status.classNames.includes("marimo-bridge-loading-overlay"));
+	assert.equal(status.attributes.get("role"), "status");
+	assert.equal(status.attributes.get("aria-live"), "polite");
+	assert.equal(status.children.length, 1);
+	const spinner = status.children[0];
+	assert.ok(spinner);
+	assert.ok(spinner.classNames.includes("marimo-bridge-loading-spinner"));
+	assert.equal(spinner.attributes.get("aria-hidden"), "true");
+	assert.equal(harness.webview.getAttribute("inert"), "");
+
+	harness.webview.dispatchEvent(new Event("dom-ready"));
+
+	assert.equal(status.removed, true);
+	assert.equal(harness.webview.getAttribute("inert"), null);
+
+	harness.webview.dispatchEvent(new Event("dom-ready"));
+	assert.equal(status.removed, true);
+});
+
+test("shows loading again only for replacement main-frame navigation", () => {
+	const harness = createWebviewHarness();
+
+	createMarimoWebview(
+		harness.plugin,
+		harness.parent,
+		"http://127.0.0.1:2718/",
+		"persist:test"
+	);
+	harness.webview.dispatchEvent(new Event("dom-ready"));
+	const initialStatus = harness.statuses[0];
+	assert.ok(initialStatus);
+	assert.equal(initialStatus.removed, true);
+
+	dispatchNavigationStart(harness.webview, {
+		isMainFrame: false,
+		isInPlace: false,
+	});
+	dispatchNavigationStart(harness.webview, {
+		isMainFrame: true,
+		isInPlace: true,
+	});
+	assert.equal(harness.statuses.length, 1);
+	assert.equal(harness.webview.getAttribute("inert"), null);
+
+	dispatchNavigationStart(harness.webview, {
+		isMainFrame: true,
+		isInPlace: false,
+	});
+
+	assert.equal(harness.statuses.length, 2);
+	const replacementStatus = harness.statuses[1];
+	assert.ok(replacementStatus);
+	assert.equal(replacementStatus.attributes.get("role"), "status");
+	assert.equal(replacementStatus.attributes.get("aria-live"), "polite");
+	assert.equal(replacementStatus.removed, false);
+	assert.equal(harness.webview.getAttribute("inert"), "");
+
+	dispatchNavigationStart(harness.webview, {
+		isMainFrame: true,
+		isInPlace: false,
+	});
+	assert.equal(harness.statuses.length, 2);
+
+	harness.webview.dispatchEvent(new Event("dom-ready"));
+	assert.equal(replacementStatus.removed, true);
+	assert.equal(harness.webview.getAttribute("inert"), null);
+});
+
+test("keeps one loading status through retries and replaces it on failure", () => {
+	const timers: (() => void)[] = [];
+	const harness = createWebviewHarness(timers);
+
+	createMarimoWebview(
+		harness.plugin,
+		harness.parent,
+		"http://127.0.0.1:2718/",
+		"persist:test"
+	);
+	const loading = harness.statuses[0];
+	assert.ok(loading);
+
+	for (let attempt = 0; attempt < 3; attempt++) {
+		const callback = timers.shift();
+		assert.ok(callback);
+		callback();
+		dispatchNavigationStart(harness.webview, {
+			isMainFrame: true,
+			isInPlace: false,
+		});
+		assert.equal(harness.statuses.length, 1);
+		assert.equal(loading.removed, false);
+	}
+
+	const finalCallback = timers.shift();
+	assert.ok(finalCallback);
+	finalCallback();
+
+	assert.equal(harness.webview.reloadCount, 3);
+	assert.equal(harness.statuses.length, 2);
+	assert.equal(loading.removed, true);
+	const failure = harness.statuses[1];
+	assert.ok(failure);
+	assert.equal(
+		failure.text,
+		"marimo server is not available. Check the marimo path in settings, then reopen."
+	);
+});
+
+test("does not replace loading with failure after detachment at the retry cap", () => {
+	const timers: (() => void)[] = [];
+	const harness = createWebviewHarness(timers);
+
+	createMarimoWebview(
+		harness.plugin,
+		harness.parent,
+		"http://127.0.0.1:2718/",
+		"persist:test"
+	);
+	for (let attempt = 0; attempt < 3; attempt++) {
+		const callback = timers.shift();
+		assert.ok(callback);
+		callback();
+	}
+	harness.webview.remove();
+
+	const finalCallback = timers.shift();
+	assert.ok(finalCallback);
+	finalCallback();
+
+	assert.equal(harness.statuses.length, 1);
+	assert.equal(harness.webview.reloadCount, 3);
+});
+
 test("opens a local notebook whose decoded path contains a percent sign", async () => {
 	const webview = new FakeWebview();
 	const parent = {
@@ -199,6 +409,8 @@ test("opens a local notebook whose decoded path contains a percent sign", async 
 			child.isConnected = true;
 			return child;
 		},
+		createDiv: (options: FakeElementOptions = {}) =>
+			new FakeStatusElement(options),
 	};
 	const opened: string[] = [];
 	const plugin = {
@@ -263,9 +475,9 @@ test("shows an explanatory failure after capped webview reloads", () => {
 			child.isConnected = true;
 			return child;
 		},
-		createDiv: (options: { text?: string }) => {
+		createDiv: (options: FakeElementOptions = {}) => {
 			if (options.text) messages.push(options.text);
-			return {};
+			return new FakeStatusElement(options);
 		},
 	};
 	const plugin = {
@@ -309,6 +521,7 @@ test("shows an explanatory failure after capped webview reloads", () => {
 
 	assert.equal(webview.reloadCount, 3);
 	assert.deepEqual(messages, [
+		"Loading marimo…",
 		"marimo server is not available. Check the marimo path in settings, then reopen.",
 	]);
 	assert.equal(webview.isConnected, false);
@@ -325,7 +538,8 @@ test("cancels recovery after the webview becomes ready", () => {
 			child.isConnected = true;
 			return child;
 		},
-		createDiv: () => ({}),
+		createDiv: (options: FakeElementOptions = {}) =>
+			new FakeStatusElement(options),
 	};
 	const plugin = {
 		servers: {
@@ -380,9 +594,9 @@ test("does not recover a detached webview", () => {
 			child.isConnected = true;
 			return child;
 		},
-		createDiv: (options: { text?: string }) => {
+		createDiv: (options: FakeElementOptions = {}) => {
 			if (options.text) messages.push(options.text);
-			return {};
+			return new FakeStatusElement(options);
 		},
 	};
 	const plugin = {
@@ -424,7 +638,7 @@ test("does not recover a detached webview", () => {
 	callback();
 
 	assert.equal(webview.reloadCount, 0);
-	assert.deepEqual(messages, []);
+	assert.deepEqual(messages, ["Loading marimo…"]);
 });
 
 test("retries an explicit main-frame load failure", () => {
@@ -437,7 +651,8 @@ test("retries an explicit main-frame load failure", () => {
 			child.isConnected = true;
 			return child;
 		},
-		createDiv: () => ({}),
+		createDiv: (options: FakeElementOptions = {}) =>
+			new FakeStatusElement(options),
 	};
 	const plugin = {
 		servers: {
@@ -489,7 +704,8 @@ test("injects the interception script when the webview becomes ready", () => {
 			child.isConnected = true;
 			return child;
 		},
-		createDiv: () => ({}),
+		createDiv: (options: FakeElementOptions = {}) =>
+			new FakeStatusElement(options),
 	};
 	const plugin = {
 		servers: {
@@ -972,7 +1188,8 @@ test("forwards webview console messages at matching severities", () => {
 			child.isConnected = true;
 			return child;
 		},
-		createDiv: () => ({}),
+		createDiv: (options: FakeElementOptions = {}) =>
+			new FakeStatusElement(options),
 	};
 	const plugin = {
 		servers: {

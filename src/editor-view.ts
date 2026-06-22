@@ -15,10 +15,19 @@ import {
 	ICON_MARIMO_LOGO,
 	CLS_BRIDGE_VIEW,
 	CLS_LOADING,
+	CLS_LOADING_OVERLAY,
+	CLS_LOADING_SPINNER,
 	CLS_WEBVIEW,
 	ATTR_ALLOWPOPUPS,
 	ATTR_PARTITION,
 	ATTR_SRC,
+	ATTR_INERT,
+	ATTR_ROLE,
+	ATTR_ARIA_LIVE,
+	ATTR_ARIA_HIDDEN,
+	ARIA_ROLE_STATUS,
+	ARIA_LIVE_POLITE,
+	ARIA_VALUE_TRUE,
 	EVENT_DOM_READY,
 	EVENT_DID_START_NAVIGATION,
 	EVENT_WILL_NAVIGATE,
@@ -51,6 +60,7 @@ import {
 	FILE_NEW,
 	EXT_PY,
 	TEXT_MARIMO,
+	TEXT_LOADING_MARIMO,
 	REDIRECT_URL_KEY,
 	TEXT_WEBVIEW_LOAD_FAILED,
 	RUNTIME_CONSTANTS,
@@ -285,6 +295,31 @@ export function createMarimoWebview(
 	el.setAttribute(ATTR_PARTITION, partition);
 	el.setAttribute(ATTR_SRC, addTokenToUrl(plugin, url));
 
+	let loadingElement: HTMLDivElement | null = null;
+	const showLoading = () => {
+		if (loadingElement) return;
+		el.setAttribute(ATTR_INERT, "");
+		loadingElement = parent.createDiv({
+			cls: [CLS_LOADING, CLS_LOADING_OVERLAY],
+			text: TEXT_LOADING_MARIMO,
+			attr: {
+				[ATTR_ROLE]: ARIA_ROLE_STATUS,
+				[ATTR_ARIA_LIVE]: ARIA_LIVE_POLITE,
+			},
+		});
+		loadingElement.createSpan({
+			cls: CLS_LOADING_SPINNER,
+			attr: {
+				[ATTR_ARIA_HIDDEN]: ARIA_VALUE_TRUE,
+			},
+		});
+	};
+	const hideLoading = () => {
+		loadingElement?.remove();
+		loadingElement = null;
+		el.removeAttribute(ATTR_INERT);
+	};
+
 	if (heightPx) {
 		el.style.setProperty(
 			RUNTIME_CONSTANTS.CSS_HEIGHT,
@@ -429,11 +464,19 @@ export function createMarimoWebview(
 			const ev = event as WebviewDidStartNavigationEvent;
 			if (ev.isMainFrame && !ev.isInPlace) {
 				bridgeGeneration++;
+				if (domReady) {
+					domReady = false;
+					loadRetries = 0;
+					showLoading();
+					scheduleLoadWatchdog();
+				}
 			}
 		}
 	);
 	el.addEventListener(EVENT_DOM_READY, () => {
 		domReady = true;
+		clearLoadWatchdog();
+		hideLoading();
 		const generation = ++bridgeGeneration;
 		void runBridge(generation);
 	});
@@ -444,9 +487,18 @@ export function createMarimoWebview(
 	// readiness (and explicit load failures) and reload, capped to avoid loops.
 	let loadRetries = 0;
 	let loadFailureShown = false;
+	let loadWatchdog: number | null = null;
+	const clearLoadWatchdog = () => {
+		if (loadWatchdog === null) return;
+		window.clearTimeout(loadWatchdog);
+		loadWatchdog = null;
+	};
 	const showLoadFailure = () => {
 		if (loadFailureShown) return;
+		if (!el.isConnected) return;
 		loadFailureShown = true;
+		clearLoadWatchdog();
+		hideLoading();
 		el.remove();
 		parent.createDiv({
 			cls: CLS_LOADING,
@@ -455,13 +507,13 @@ export function createMarimoWebview(
 	};
 	const reloadWebview = (reason: string) => {
 		if (domReady) return;
+		// The view/embed may have been torn down while the watchdog was pending;
+		// reloading or rendering failure UI for a detached guest is pointless.
+		if (!el.isConnected) return;
 		if (loadRetries >= WEBVIEW_MAX_LOAD_RETRIES) {
 			showLoadFailure();
 			return;
 		}
-		// The view/embed may have been torn down while the watchdog was pending;
-		// reloading a detached <webview> is pointless (and the guest is gone).
-		if (!el.isConnected) return;
 		loadRetries++;
 		console.warn(
 			formatWebviewReloadLog(
@@ -478,7 +530,9 @@ export function createMarimoWebview(
 		scheduleLoadWatchdog();
 	};
 	const scheduleLoadWatchdog = () => {
-		window.setTimeout(() => {
+		clearLoadWatchdog();
+		loadWatchdog = window.setTimeout(() => {
+			loadWatchdog = null;
 			reloadWebview(RUNTIME_CONSTANTS.LOG_NO_DOM_READY);
 		}, WEBVIEW_LOAD_WATCHDOG_MS);
 	};
@@ -571,6 +625,7 @@ export function createMarimoWebview(
 
 	// Attach last: everything above (preload, partition, listeners) must be in
 	// place before Electron attaches the guest page.
+	showLoading();
 	parent.appendChild(el);
 
 	// Start the blank-webview watchdog now that the guest is attaching.
