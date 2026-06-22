@@ -4,7 +4,7 @@
 
 View and edit [marimo](https://marimo.io/) notebooks (`.py` files) directly
 inside [Obsidian](https://obsidian.md/). Markdown (`.md`) notebooks can also be
-opened when a compatible marimo Markdown integration is installed.
+opened.
 
 marimo notebooks are plain Python files and marimo's editor is a local web app.
 This plugin starts and manages a local marimo server for you and embeds its UI
