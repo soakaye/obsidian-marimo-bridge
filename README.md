@@ -4,7 +4,7 @@
 
 View and edit [marimo](https://marimo.io/) notebooks (`.py` files) directly
 inside [Obsidian](https://obsidian.md/). Markdown (`.md`) notebooks can also be
-opened when a compatible marimo Markdown integration is installed.
+opened.
 
 marimo notebooks are plain Python files and marimo's editor is a local web app.
 This plugin starts and manages a local marimo server for you and embeds its UI
@@ -21,8 +21,7 @@ notes. Edits are written straight back to the real `.py` file on disk.
 - **Full notebook editing** — open a `.py` notebook in a dedicated tab with
   marimo's reactive editor. Saves go straight to the file.
 - **Optional Markdown notebook support** — add *Open in marimo* to the
-  right-click menu for `.md` files when using a marimo Markdown integration
-  such as `mkdocs-marimo` or `quarto-marimo`.
+  right-click menu for `.md` files.
 - **Inline embeds** — drop a notebook into any note with a ` ```marimo ` block,
   in either editable or read-only "app" mode.
 - **Automatic server management** — the marimo edit server starts when Obsidian
@@ -30,13 +29,6 @@ notes. Edits are written straight back to the real `.py` file on disk.
   whole process tree is terminated; on macOS and Linux, the server is spawned
   detached and its process group is signalled, so no orphan marimo workers are
   left behind.
-- **Reliable termination on exit** — every server the plugin spawns is recorded
-  (PID/port/kind) to a file in the plugin directory. A full Obsidian quit
-  signals them synchronously, and any server that survives a crash or force-quit
-  is reconciled on the next launch — terminated only when positively confirmed
-  both alive **and** accepting the plugin's token. Unrelated processes are not
-  touched during cleanup; the configured edit port is the deliberate exception,
-  where an incompatible listener is evicted before the plugin starts its server.
 - **Token-authenticated servers** — servers run headless with
   `--token-password`, always bound to `127.0.0.1`. The bind address is fixed and
   cannot be changed in settings. Use a generated per-session token by default,
@@ -62,10 +54,6 @@ notes. Edits are written straight back to the real `.py` file on disk.
   ```
 
 A virtual environment inside the vault (e.g. `<vault>/.venv`) is auto-detected.
-
-Opening `.md` files as notebooks additionally requires a compatible marimo
-Markdown integration, such as `mkdocs-marimo` or `quarto-marimo`, installed in
-the same environment as marimo.
 
 ---
 

@@ -332,7 +332,9 @@ export default class MarimoBridgePlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const stored = (await this.loadData()) as Partial<MarimoBridgeSettings> & {
+		// loadData() resolves to null on a fresh install (no data.json yet), so
+		// fall back to an empty object before touching its properties.
+		const stored = ((await this.loadData()) ?? {}) as Partial<MarimoBridgeSettings> & {
 			host?: unknown;
 		};
 		delete stored.host;

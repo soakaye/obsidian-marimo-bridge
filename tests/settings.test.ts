@@ -32,3 +32,18 @@ test("discards a legacy persisted host while loading settings", async () => {
 		false
 	);
 });
+
+test("loads defaults when no settings were ever persisted (loadData null)", async () => {
+	const plugin = Object.create(MarimoBridgePlugin.prototype) as {
+		loadData(): Promise<unknown>;
+		loadSettings(): Promise<void>;
+		settings: MarimoBridgeSettings;
+	};
+	// Fresh install: Obsidian's loadData() resolves to null when no data.json
+	// exists yet. loadSettings() must not throw on the null result.
+	plugin.loadData = async () => null;
+
+	await plugin.loadSettings();
+
+	assert.deepEqual(plugin.settings, DEFAULT_SETTINGS);
+});
