@@ -21,8 +21,7 @@ notes. Edits are written straight back to the real `.py` file on disk.
 - **Full notebook editing** — open a `.py` notebook in a dedicated tab with
   marimo's reactive editor. Saves go straight to the file.
 - **Optional Markdown notebook support** — add *Open in marimo* to the
-  right-click menu for `.md` files when using a marimo Markdown integration
-  such as `mkdocs-marimo` or `quarto-marimo`.
+  right-click menu for `.md` files.
 - **Inline embeds** — drop a notebook into any note with a ` ```marimo ` block,
   in either editable or read-only "app" mode.
 - **Automatic server management** — the marimo edit server starts when Obsidian
