@@ -1,7 +1,7 @@
 {
 	"id": "marimo-bridge",
 	"name": "marimo Bridge",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"minAppVersion": "1.5.0",
 	"description": "View and edit marimo notebooks (.py) with an auto-managed local server embedded in a webview.",
 	"author": "soakaye",
