@@ -35,6 +35,5 @@ npm run lint    # eslint (flat config, eslint-plugin-obsidianmd)
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
-at specs/021-add-loading-indicator/plan.md
+shell commands, and other important information, read the current plan: [plan.md](specs/022-pip-install-marimo/plan.md)
 <!-- SPECKIT END -->

@@ -91,6 +91,7 @@ export const SCHEME_HTTP = "http://";
 export const CMD_ARG_M = "-m";
 export const CMD_ARG_PIP = "pip";
 export const CMD_ARG_INSTALL = "install";
+export const CMD_ARG_UPGRADE = "--upgrade";
 export const CMD_ARG_VERSION = "--version";
 export const CMD_ARG_HEADLESS = "--headless";
 export const CMD_ARG_PORT = "--port";

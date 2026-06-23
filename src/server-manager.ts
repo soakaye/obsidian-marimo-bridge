@@ -37,6 +37,7 @@ import {
 	CMD_ARG_M,
 	CMD_ARG_PIP,
 	CMD_ARG_INSTALL,
+	CMD_ARG_UPGRADE,
 	CMD_ARG_VERSION,
 	CMD_ARG_HEADLESS,
 	CMD_ARG_TOKEN_PASSWORD,
@@ -345,9 +346,16 @@ export class ServerManager {
 	async installMarimo(): Promise<{ ok: boolean; message: string }> {
 		const python = this.resolvePython();
 		new Notice(RUNTIME_CONSTANTS.NOTICE_INSTALLING_MARIMO);
+		const isInstalled = (await this.getMarimoVersion()) !== null;
+		const args = [CMD_ARG_M, CMD_ARG_PIP, CMD_ARG_INSTALL];
+		if (isInstalled) {
+			args.push(CMD_ARG_UPGRADE);
+		}
+		args.push(CMD_MARIMO);
+
 		const { code, stderr } = await this.runCapture(
 			python,
-			[CMD_ARG_M, CMD_ARG_PIP, CMD_ARG_INSTALL, CMD_MARIMO],
+			args,
 			PIP_INSTALL_TIMEOUT_MS
 		);
 		this.available = null; // force re-detection next time
