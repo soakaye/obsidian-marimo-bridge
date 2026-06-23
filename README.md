@@ -135,7 +135,7 @@ back to the defaults configured in settings.
 | **Open .py files in marimo by default** | `on` | Turn off to keep `.py` as plain text and open via command / menu. Takes effect after reloading the plugin. |
 | **Default embed mode / height** | `edit` / `600` | Defaults for ` ```marimo ` blocks. |
 | **Enable file explorer context menu** | `on` | Show the *Create new marimo notebook* item when right-clicking files and folders. |
-| **Open Markdown files in marimo** | `off` | Show *Open in marimo* when right-clicking `.md` files. Requires a compatible marimo Markdown integration such as `mkdocs-marimo` or `quarto-marimo`. |
+| **Open Markdown files in marimo** | `off` | Show *Open in marimo* when right-clicking `.md` files. |
 | **API token** | *(auto-generated)* | Token the servers authenticate with (`--token-password`). Leave empty for a secure random per-session token. Changing it requires restarting the server. |
 
 ### Resolution order
