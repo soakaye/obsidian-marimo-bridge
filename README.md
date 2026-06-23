@@ -95,8 +95,7 @@ it updated from GitHub releases.
 - **Ribbon icon** (notebook) — opens the marimo home page.
 - **Right-click a `.py` file** → *Open in marimo*.
 - **Right-click a `.md` file** → *Open in marimo* (when *Open Markdown files in
-  marimo* is enabled and a compatible marimo Markdown integration is
-  installed).
+  marimo* is enabled.
 - **Right-click a file or folder** → *Create new marimo notebook* (when the
   *Enable file explorer context menu* setting is on).
 
