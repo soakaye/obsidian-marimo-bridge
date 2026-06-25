@@ -51,6 +51,24 @@ interface ManagerInternals {
 	confirmOurServer(port: number, token?: string): Promise<boolean>;
 	isPortFree(port: number): Promise<boolean>;
 	resolveCommand(): { cmd: string; prefixArgs: string[] };
+	runCapture(
+		cmd: string,
+		args: string[],
+		timeoutMs: number
+	): Promise<{ code: number | null; stdout: string; stderr: string }>;
+	isVaultVenvCreatedByUv(): boolean;
+	buildUvDiscoveryCandidates(): string[];
+	resolveUvCommand(): Promise<{
+		source: string;
+		command: string | null;
+		diagnostic: string;
+	}>;
+	resolvePackageManagerStrategy(): Promise<{
+		kind: "uv" | "pip";
+		pythonPath: string;
+		uvCommand: string | null;
+		diagnostic: string | null;
+	}>;
 	waitForReady(port: number): Promise<boolean>;
 	spawnServer(
 		kind: "edit" | "run",
@@ -76,6 +94,7 @@ function makeSettings(): MarimoBridgeSettings {
 		showContextMenu: true,
 		showMarkdownContextMenu: false,
 		apiToken: "session-token",
+		uvPath: "",
 	};
 }
 
@@ -122,6 +141,29 @@ function readRecordCount(recordsPath: string): number {
 	return parsed.records.length;
 }
 
+function createVaultVenv(
+	vault: string,
+	pyvenvConfig: string | null
+): string {
+	const scriptsDir = process.platform === "win32" ? "Scripts" : "bin";
+	const pythonBin = process.platform === "win32" ? "python.exe" : "python";
+	const venv = path.join(vault, ".venv");
+	const scripts = path.join(venv, scriptsDir);
+	mkdirSync(scripts, { recursive: true });
+	const pythonPath = path.join(scripts, pythonBin);
+	writeFileSync(pythonPath, "");
+	if (pyvenvConfig !== null) {
+		writeFileSync(path.join(venv, "pyvenv.cfg"), pyvenvConfig);
+	}
+	return realpathSync(pythonPath);
+}
+
+interface CaptureCall {
+	cmd: string;
+	args: string[];
+	timeoutMs: number;
+}
+
 test("always builds edit URLs on the fixed loopback host", () => {
 	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
 	try {
@@ -145,6 +187,256 @@ test("builds token-bearing run URLs on the fixed loopback host", () => {
 		assert.equal(
 			internal.runServerUrl(2719),
 			"http://127.0.0.1:2719/?access_token=session-token"
+		);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("detects a uv-created vault venv only from a uv entry in pyvenv.cfg", () => {
+	const uvVault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	const plainVault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	const missingVault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	const unreadableVault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		createVaultVenv(uvVault, "home = /python\nuv = 0.9.0\n");
+		createVaultVenv(plainVault, "home = /python\n");
+		createVaultVenv(missingVault, null);
+		createVaultVenv(unreadableVault, null);
+		mkdirSync(path.join(unreadableVault, ".venv", "pyvenv.cfg"));
+
+		assert.equal(makeManager(uvVault).internal.isVaultVenvCreatedByUv(), true);
+		assert.equal(makeManager(plainVault).internal.isVaultVenvCreatedByUv(), false);
+		assert.equal(
+			makeManager(missingVault).internal.isVaultVenvCreatedByUv(),
+			false
+		);
+		assert.equal(
+			makeManager(unreadableVault).internal.isVaultVenvCreatedByUv(),
+			false
+		);
+	} finally {
+		rmSync(uvVault, { recursive: true, force: true });
+		rmSync(plainVault, { recursive: true, force: true });
+		rmSync(missingVault, { recursive: true, force: true });
+		rmSync(unreadableVault, { recursive: true, force: true });
+	}
+});
+
+test("inspects marimo with uv pip show for a uv-created vault venv", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		const uvCommand = process.execPath;
+		createVaultVenv(vault, "uv = 0.9.0\n");
+		const { manager, settings, internal } = makeManager(vault);
+		settings.uvPath = uvCommand;
+		const calls: CaptureCall[] = [];
+		internal.runCapture = async (cmd, args, timeoutMs) => {
+			calls.push({ cmd, args, timeoutMs });
+			if (args.includes("--version")) {
+				return { code: 0, stdout: "uv 0.9.0", stderr: "" };
+			}
+			if (args.includes("show")) {
+				return {
+					code: 0,
+					stdout: "Name: marimo\nVersion: 1.2.3\n",
+					stderr: "",
+				};
+			}
+			return { code: 1, stdout: "", stderr: "unexpected" };
+		};
+
+		assert.equal(await manager.getMarimoPackageVersion(), "1.2.3");
+		assert.deepEqual(calls[1], {
+			cmd: uvCommand,
+			args: [
+				"pip",
+				"show",
+				"marimo",
+				"--python",
+				createVaultVenv(vault, "uv = 0.9.0\n"),
+			],
+			timeoutMs: 8000,
+		});
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("reports marimo missing when uv pip show cannot find the package", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		createVaultVenv(vault, "uv = 0.9.0\n");
+		const { manager, settings, internal } = makeManager(vault);
+		settings.uvPath = process.execPath;
+		internal.runCapture = async (_cmd, args) => {
+			if (args.includes("--version")) {
+				return { code: 0, stdout: "uv 0.9.0", stderr: "" };
+			}
+			return { code: 1, stdout: "", stderr: "not found" };
+		};
+
+		assert.equal(await manager.getMarimoPackageVersion(), null);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("configured uvPath is preferred and invalid values do not fall back", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		createVaultVenv(vault, "uv = 0.9.0\n");
+		const { manager, settings, internal } = makeManager(vault);
+		settings.uvPath = path.join(vault, "missing-uv");
+		let callCount = 0;
+		internal.runCapture = async () => {
+			callCount++;
+			return { code: 0, stdout: "uv 0.9.0", stderr: "" };
+		};
+
+		const result = await manager.installMarimo();
+
+		assert.equal(result.ok, false);
+		assert.match(result.message, /uv/i);
+		assert.equal(callCount, 0);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("uv discovery checks PATH before default install locations", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		const { internal } = makeManager(vault);
+		const candidates = internal.buildUvDiscoveryCandidates();
+		assert.equal(candidates[0], "uv");
+		assert.ok(candidates.some((candidate) => candidate.includes(".local")));
+		assert.ok(candidates.some((candidate) => candidate.includes(".cargo")));
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("installs and upgrades marimo with uv for a uv-created vault venv", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		const pythonPath = createVaultVenv(vault, "uv = 0.9.0\n");
+		const { manager, settings, internal } = makeManager(vault);
+		settings.uvPath = process.execPath;
+		const calls: CaptureCall[] = [];
+		let packageInstalled = false;
+		internal.runCapture = async (cmd, args, timeoutMs) => {
+			calls.push({ cmd, args, timeoutMs });
+			if (args.includes("--version") && cmd === process.execPath) {
+				return { code: 0, stdout: "uv 0.9.0", stderr: "" };
+			}
+			if (args.includes("show")) {
+				return packageInstalled
+					? {
+						code: 0,
+						stdout: "Name: marimo\nVersion: 1.2.3\n",
+						stderr: "",
+					}
+					: { code: 1, stdout: "", stderr: "not found" };
+			}
+			if (args.includes("install")) {
+				packageInstalled = true;
+				return { code: 0, stdout: "installed", stderr: "" };
+			}
+			return { code: 0, stdout: "marimo 1.2.3", stderr: "" };
+		};
+
+		assert.equal((await manager.installMarimo()).ok, true);
+		assert.deepEqual(
+			calls.find((call) => call.args.includes("install"))?.args,
+			["pip", "install", "marimo", "--python", pythonPath]
+		);
+
+		calls.length = 0;
+		assert.equal((await manager.installMarimo()).ok, true);
+		assert.deepEqual(
+			calls.find((call) => call.args.includes("install"))?.args,
+			["pip", "install", "--upgrade", "marimo", "--python", pythonPath]
+		);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("does not fall back to pip when uv package installation fails", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		createVaultVenv(vault, "uv = 0.9.0\n");
+		const { manager, settings, internal } = makeManager(vault);
+		settings.uvPath = process.execPath;
+		const calls: CaptureCall[] = [];
+		internal.runCapture = async (cmd, args, timeoutMs) => {
+			calls.push({ cmd, args, timeoutMs });
+			if (args.includes("--version")) {
+				return { code: 0, stdout: "uv 0.9.0", stderr: "" };
+			}
+			if (args.includes("show")) {
+				return { code: 1, stdout: "", stderr: "not found" };
+			}
+			return { code: 42, stdout: "", stderr: "resolver failed" };
+		};
+
+		const result = await manager.installMarimo();
+
+		assert.equal(result.ok, false);
+		assert.match(result.message, /failed/i);
+		assert.equal(
+			calls.some((call) => call.args.includes("-m") && call.args.includes("pip")),
+			false
+		);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("keeps pip strategy for non-uv and configured Python targets", async () => {
+	const plainVault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	const configuredVault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		createVaultVenv(plainVault, "home = /python\n");
+		createVaultVenv(configuredVault, "uv = 0.9.0\n");
+		const plain = makeManager(plainVault);
+		const configured = makeManager(configuredVault);
+		configured.settings.pythonPath = process.execPath;
+
+		assert.equal(
+			(await plain.internal.resolvePackageManagerStrategy()).kind,
+			"pip"
+		);
+		assert.equal(
+			(await configured.internal.resolvePackageManagerStrategy()).kind,
+			"pip"
+		);
+	} finally {
+		rmSync(plainVault, { recursive: true, force: true });
+		rmSync(configuredVault, { recursive: true, force: true });
+	}
+});
+
+test("uses existing pip install args for configured Python targets", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		createVaultVenv(vault, "uv = 0.9.0\n");
+		const { manager, settings, internal } = makeManager(vault);
+		settings.pythonPath = process.execPath;
+		const calls: CaptureCall[] = [];
+		internal.runCapture = async (cmd, args, timeoutMs) => {
+			calls.push({ cmd, args, timeoutMs });
+			if (args.includes("--version")) {
+				return { code: 1, stdout: "", stderr: "missing" };
+			}
+			return { code: 0, stdout: "installed", stderr: "" };
+		};
+
+		assert.equal((await manager.installMarimo()).ok, true);
+		assert.deepEqual(
+			calls.find((call) => call.args.includes("install"))?.args,
+			["-m", "pip", "install", "marimo"]
 		);
 	} finally {
 		rmSync(vault, { recursive: true, force: true });

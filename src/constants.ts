@@ -15,6 +15,7 @@ export const DEFAULT_EMBED_HEIGHT = 600;
 export const DEFAULT_SHOW_CONTEXT_MENU = true;
 export const DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU = false;
 export const DEFAULT_API_TOKEN = "";
+export const DEFAULT_UV_PATH = "";
 
 // UI & Notice Messages / Timing
 export const NOTICE_TIMEOUT_MS = 8000;
@@ -35,13 +36,16 @@ export const EXE_MARIMO_WIN = "marimo.exe";
 export const EXE_MARIMO_UNIX = "marimo";
 export const EXE_PYTHON_WIN = "python.exe";
 export const EXE_PYTHON_UNIX = "python";
+export const EXE_UV_WIN = "uv.exe";
 export const FALLBACK_PYTHON_UNIX = "python3";
 export const CMD_MARIMO = "marimo";
+export const CMD_UV = "uv";
 
 // Settings tab text
 export const SETTINGS_TAB_HEADER = "marimo Bridge";
 export const SETTING_MARIMO_PATH_NAME = "marimo executable path";
 export const SETTING_PYTHON_PATH_NAME = "Python interpreter path";
+export const SETTING_UV_PATH_NAME = "uv command path";
 export const SETTING_MARIMO_INSTALL_NAME = "marimo installation";
 export const SETTING_PORT_NAME = "Port";
 export const SETTING_AUTO_START_NAME = "Auto-start server on load";
@@ -91,8 +95,10 @@ export const SCHEME_HTTP = "http://";
 export const CMD_ARG_M = "-m";
 export const CMD_ARG_PIP = "pip";
 export const CMD_ARG_INSTALL = "install";
+export const CMD_ARG_SHOW = "show";
 export const CMD_ARG_UPGRADE = "--upgrade";
 export const CMD_ARG_VERSION = "--version";
+export const CMD_ARG_PYTHON = "--python";
 export const CMD_ARG_HEADLESS = "--headless";
 export const CMD_ARG_PORT = "--port";
 export const CMD_ARG_HOST = "--host";
@@ -105,12 +111,25 @@ export const PORT_MAX = 65535;
 // Spawned-server record store (crash-recovery for self-started marimo servers)
 /** File holding ownership records for servers spawned by this plugin. */
 export const FILE_SERVER_RECORDS = ".marimo-servers.json";
+/** uv-created virtual environments record this file under their root. */
+export const FILE_PYVENV_CFG = "pyvenv.cfg";
 /** Signal `0` probes process existence without terminating it. */
 export const SIGNAL_PROBE = 0;
 /** Per-record timeout when confirming a leftover server on next-launch reconcile. */
 export const RECONCILE_CONFIRM_TIMEOUT_MS = 3000;
 /** Text encoding used when reading/writing the record file. */
 export const ENCODING_UTF8 = "utf8";
+export const ENV_USERPROFILE = "USERPROFILE";
+export const DIR_UV_LOCAL = ".local";
+export const DIR_UV_CARGO = ".cargo";
+export const UV_HOMEBREW_ARM_PATH = "/opt/homebrew/bin/uv";
+export const UV_HOMEBREW_INTEL_PATH = "/usr/local/bin/uv";
+export const PACKAGE_MANAGER_PIP = "pip" as const;
+export const PACKAGE_MANAGER_UV = "uv" as const;
+export const UV_COMMAND_SOURCE_CONFIGURED = "configured" as const;
+export const UV_COMMAND_SOURCE_PATH = "path" as const;
+export const UV_COMMAND_SOURCE_DEFAULT_LOCATION = "default-location" as const;
+export const UV_COMMAND_SOURCE_UNAVAILABLE = "unavailable" as const;
 
 // View attributes & events
 export const ATTR_ALLOWPOPUPS = "allowpopups";
@@ -302,6 +321,7 @@ export const SVG_MARIMO_LOGO = '<g transform="scale(0.083333)"><path fill="none"
 // Setting Tab Descriptions
 export const SETTING_MARIMO_PATH_DESC = "Absolute path to marimo (e.g. {marimoExample}). Leave empty to auto-detect under <vault>/.venv.";
 export const SETTING_PYTHON_PATH_DESC = "Absolute path to the Python interpreter (e.g. {pythonExample}). Used to install marimo and to run `python -m marimo`. Leave empty to auto-detect under <vault>/.venv.";
+export const SETTING_UV_PATH_DESC = "Absolute path to uv. Leave empty to search PATH and common uv install locations.";
 export const SETTING_PORT_DESC = "Port for the marimo edit server.";
 export const SETTING_AUTO_START_DESC = "Launch the marimo edit server when Obsidian starts.";
 export const SETTING_TAKEOVER_DESC = "When on, clicking a .py file opens the marimo editor. Turn off to keep .py as plain text and use the command / context menu instead. Change takes effect after reloading the plugin.";
@@ -349,6 +369,7 @@ export const RUNTIME_CONSTANTS = {
 	NOTICE_RESTARTING_SERVER: "Restarting marimo server…",
 	NOTICE_MARIMO_NOT_INSTALLED: "Marimo bridge: marimo is not installed, so the server was not started. Install it from the plugin settings.",
 	NOTICE_INSTALLING_MARIMO: "Installing marimo… this may take a minute.",
+	NOTICE_UV_REQUIRED: "uv is required for this uv-created .venv. Configure a valid uv command path or install uv in a standard location.",
 	NOTICE_PORT_CONFLICT_SUFFIX: " is already in use and could not be released. Change the marimo bridge port or stop that process manually.",
 	TITLE_OPEN_IN_MARIMO: "Open in marimo",
 	TEXT_STARTING_SERVER: "Starting marimo server...",
@@ -363,6 +384,8 @@ export const RUNTIME_CONSTANTS = {
 	LOG_AUTH_LIMIT: "[MarimoBridge] Auth retry limit reached. Showing login page.",
 	LOG_NAVIGATE_PARSE_FAILED: "[MarimoBridge] Failed to parse did-navigate URL:",
 	LOG_PIP_INSTALL_FAILED: "[marimo-bridge] pip install failed:",
+	LOG_UV_INSTALL_FAILED: "[marimo-bridge] uv pip install failed:",
+	LOG_UV_COMMAND_UNAVAILABLE: "[marimo-bridge] uv command unavailable:",
 	LOG_EDIT_SERVER_EXCEPTION: "[MarimoBridge] Exception in ensureEditServer:",
 	LOG_RECORD_WRITE_FAILED: "[MarimoBridge] Failed to write server records:",
 	ERROR_SERVER_MANAGER_UNAVAILABLE: "Marimo server manager is unavailable.",
@@ -412,6 +435,14 @@ export function formatMarimoInstallSuccess(version: string | null): string {
 
 export function formatMarimoInstallFailure(code: number | null): string {
 	return `marimo install failed (exit ${String(code)}). Check the console.`;
+}
+
+export function formatUvCommandInvalid(command: string): string {
+	return `Configured uv command path is not usable: ${command}`;
+}
+
+export function formatUvCommandUnavailable(diagnostic: string): string {
+	return `uv command unavailable. ${diagnostic}`;
 }
 
 export function formatServerBaseUrl(port: number): string {
@@ -506,7 +537,18 @@ export function formatBrokenEnvironmentHint(hint: string): string {
 
 export function formatNotInstalledDescription(
 	brokenHint: string,
+	installTarget: string
+): string {
+	return `Not installed. ${brokenHint}Will install with: ${installTarget}`;
+}
+
+export function formatPipInstallTargetDescription(pythonPath: string): string {
+	return `${pythonPath} -m pip install marimo`;
+}
+
+export function formatUvInstallTargetDescription(
+	uvCommand: string,
 	pythonPath: string
 ): string {
-	return `Not installed. ${brokenHint}Will install into: ${pythonPath} -m pip install marimo`;
+	return `${uvCommand} pip install marimo --python ${pythonPath}`;
 }

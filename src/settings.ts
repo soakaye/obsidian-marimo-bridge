@@ -19,9 +19,11 @@ import {
 	DEFAULT_SHOW_CONTEXT_MENU,
 	DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU,
 	DEFAULT_API_TOKEN,
+	DEFAULT_UV_PATH,
 	SETTINGS_TAB_HEADER,
 	SETTING_MARIMO_PATH_NAME,
 	SETTING_PYTHON_PATH_NAME,
+	SETTING_UV_PATH_NAME,
 	SETTING_MARIMO_INSTALL_NAME,
 	SETTING_PORT_NAME,
 	SETTING_AUTO_START_NAME,
@@ -48,6 +50,7 @@ import {
 	EXE_PYTHON_UNIX,
 	SETTING_MARIMO_PATH_DESC,
 	SETTING_PYTHON_PATH_DESC,
+	SETTING_UV_PATH_DESC,
 	SETTING_PORT_DESC,
 	SETTING_AUTO_START_DESC,
 	SETTING_TAKEOVER_DESC,
@@ -72,6 +75,8 @@ import {
 export interface MarimoBridgeSettings {
 	/** Path to the Python interpreter (used for install and `python -m marimo`). Empty => auto-detect under <vault>/.venv. */
 	pythonPath: string;
+	/** Path to the uv executable. Empty => auto-detect when uv package operations are required. */
+	uvPath: string;
 	/** Path to the marimo executable. Empty => auto-detect under <vault>/.venv. */
 	marimoPath: string;
 	/** Port for the always-on edit server. */
@@ -96,6 +101,7 @@ export interface MarimoBridgeSettings {
 
 export const DEFAULT_SETTINGS: MarimoBridgeSettings = {
 	pythonPath: "",
+	uvPath: DEFAULT_UV_PATH,
 	marimoPath: "",
 	port: DEFAULT_PORT,
 	autoStart: DEFAULT_AUTO_START,
@@ -174,7 +180,25 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 				});
 			});
 
-		// 3. marimo installation status / installer
+		// 3. uv command path
+		new Setting(containerEl)
+			.setName(SETTING_UV_PATH_NAME)
+			.setDesc(SETTING_UV_PATH_DESC)
+			.addText((text) => {
+				text
+					.setPlaceholder(PLACEHOLDER_AUTO_DETECT)
+					.setValue(this.plugin.settings.uvPath);
+				text.inputEl.addEventListener(RUNTIME_CONSTANTS.EVENT_BLUR, () => {
+					void (async () => {
+						this.plugin.settings.uvPath = text.getValue().trim();
+						await this.plugin.saveSettings();
+						this.plugin.servers.invalidateAvailability();
+						void refreshInstallStatus();
+					})();
+				});
+			});
+
+		// 4. marimo installation status / installer
 		const installSetting = new Setting(containerEl)
 			.setName(SETTING_MARIMO_INSTALL_NAME)
 			.setDesc(TEXT_CHECKING);
@@ -195,7 +219,7 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 		const refreshInstallStatus = async (): Promise<void> => {
 			installSetting.setDesc(TEXT_CHECKING);
 			installButton?.setDisabled(true);
-			const version = await this.plugin.servers.getMarimoVersion();
+			const version = await this.plugin.servers.getMarimoPackageVersion();
 			if (version) {
 				installSetting.setDesc(
 					formatInstalledDescription(
@@ -210,10 +234,12 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 				const brokenHint = this.plugin.servers.vaultVenvBroken()
 					? formatBrokenEnvironmentHint(TEXT_VENV_BROKEN_HINT)
 					: "";
+				const installTarget =
+					await this.plugin.servers.describeMarimoInstallTarget();
 				installSetting.setDesc(
 					formatNotInstalledDescription(
 						brokenHint,
-						this.plugin.servers.resolvePython()
+						installTarget
 					)
 				);
 				installButton

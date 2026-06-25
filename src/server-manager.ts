@@ -14,6 +14,7 @@ import * as http from "http";
 import * as net from "net";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import * as crypto from "crypto";
 import type { MarimoBridgeSettings } from "./settings";
 import { ServerRecordStore, type SpawnedServerRecord } from "./server-records";
@@ -23,12 +24,16 @@ import {
 	DIR_VENV,
 	DIR_SCRIPTS_WIN,
 	DIR_SCRIPTS_UNIX,
+	DIR_UV_CARGO,
+	DIR_UV_LOCAL,
 	EXE_MARIMO_WIN,
 	EXE_MARIMO_UNIX,
 	EXE_PYTHON_WIN,
 	EXE_PYTHON_UNIX,
+	EXE_UV_WIN,
 	FALLBACK_PYTHON_UNIX,
 	CMD_MARIMO,
+	CMD_UV,
 	NOTICE_TIMEOUT_MS,
 	PIP_INSTALL_TIMEOUT_MS,
 	SLEEP_DELAY_MS,
@@ -37,8 +42,10 @@ import {
 	CMD_ARG_M,
 	CMD_ARG_PIP,
 	CMD_ARG_INSTALL,
+	CMD_ARG_SHOW,
 	CMD_ARG_UPGRADE,
 	CMD_ARG_VERSION,
+	CMD_ARG_PYTHON,
 	CMD_ARG_HEADLESS,
 	CMD_ARG_TOKEN_PASSWORD,
 	CMD_ARG_PORT,
@@ -51,12 +58,24 @@ import {
 	RECONCILE_CONFIRM_TIMEOUT_MS,
 	PORT_MAX,
 	HOST_LOOPBACK,
+	ENCODING_UTF8,
+	ENV_USERPROFILE,
+	FILE_PYVENV_CFG,
+	PACKAGE_MANAGER_PIP,
+	PACKAGE_MANAGER_UV,
+	UV_COMMAND_SOURCE_CONFIGURED,
+	UV_COMMAND_SOURCE_DEFAULT_LOCATION,
+	UV_COMMAND_SOURCE_PATH,
+	UV_COMMAND_SOURCE_UNAVAILABLE,
+	UV_HOMEBREW_ARM_PATH,
+	UV_HOMEBREW_INTEL_PATH,
 	RUNTIME_CONSTANTS,
 	OFFSET_ONE,
 	MODE_EDIT,
 	MODE_RUN,
 	formatMarimoInstallSuccess,
 	formatMarimoInstallFailure,
+	formatPipInstallTargetDescription,
 	formatServerBaseUrl,
 	formatServerFileUrl,
 	formatServerRootUrl,
@@ -70,11 +89,37 @@ import {
 	formatServerSpawnErrorLog,
 	formatServerSpawnErrorNotice,
 	formatTaskkillCommand,
+	formatUvCommandInvalid,
+	formatUvCommandUnavailable,
+	formatUvInstallTargetDescription,
 	formatOrphanReconciledLog,
 	formatPortFallbackLog,
 } from "./constants";
 
 type ServerKind = "edit" | "run";
+
+type PackageManagerKind =
+	| typeof PACKAGE_MANAGER_PIP
+	| typeof PACKAGE_MANAGER_UV;
+
+type UvCommandSource =
+	| typeof UV_COMMAND_SOURCE_CONFIGURED
+	| typeof UV_COMMAND_SOURCE_PATH
+	| typeof UV_COMMAND_SOURCE_DEFAULT_LOCATION
+	| typeof UV_COMMAND_SOURCE_UNAVAILABLE;
+
+interface UvCommandResolution {
+	source: UvCommandSource;
+	command: string | null;
+	diagnostic: string;
+}
+
+interface PackageManagerStrategy {
+	kind: PackageManagerKind;
+	pythonPath: string;
+	uvCommand: string | null;
+	diagnostic: string | null;
+}
 
 /** Bookkeeping for one running (or attached) marimo server. */
 interface ManagedServer {
@@ -219,6 +264,134 @@ export class ServerManager {
 		return isWin ? EXE_PYTHON_UNIX : FALLBACK_PYTHON_UNIX;
 	}
 
+	private vaultVenvPythonPath(): string {
+		const isWin = process.platform === PLATFORM_WIN32;
+		const scriptsDir = isWin ? DIR_SCRIPTS_WIN : DIR_SCRIPTS_UNIX;
+		const pythonBin = isWin ? EXE_PYTHON_WIN : EXE_PYTHON_UNIX;
+		return path.join(this.vaultPath, DIR_VENV, scriptsDir, pythonBin);
+	}
+
+	private vaultPyvenvConfigPath(): string {
+		return path.join(this.vaultPath, DIR_VENV, FILE_PYVENV_CFG);
+	}
+
+	private isVaultVenvCreatedByUv(): boolean {
+		try {
+			const contents = fs.readFileSync(
+				this.vaultPyvenvConfigPath(),
+				ENCODING_UTF8
+			);
+			return /^uv\s*=/m.test(contents);
+		} catch {
+			return false;
+		}
+	}
+
+	private buildUvDiscoveryCandidates(): string[] {
+		const home = process.env[ENV_USERPROFILE] ?? os.homedir();
+		const candidates = [CMD_UV];
+		if (process.platform === PLATFORM_WIN32) {
+			candidates.push(
+				path.join(home, DIR_UV_LOCAL, DIR_SCRIPTS_UNIX, EXE_UV_WIN),
+				path.join(home, DIR_UV_CARGO, DIR_SCRIPTS_UNIX, EXE_UV_WIN)
+			);
+		} else {
+			candidates.push(
+				path.join(home, DIR_UV_LOCAL, DIR_SCRIPTS_UNIX, CMD_UV),
+				path.join(home, DIR_UV_CARGO, DIR_SCRIPTS_UNIX, CMD_UV),
+				UV_HOMEBREW_ARM_PATH,
+				UV_HOMEBREW_INTEL_PATH
+			);
+		}
+		return candidates;
+	}
+
+	private async validateUvCommand(
+		command: string,
+		source: UvCommandSource
+	): Promise<UvCommandResolution> {
+		const { code, stderr } = await this.runCapture(
+			command,
+			[CMD_ARG_VERSION],
+			NOTICE_TIMEOUT_MS
+		);
+		if (code === 0) {
+			return { source, command, diagnostic: "" };
+		}
+		return {
+			source: UV_COMMAND_SOURCE_UNAVAILABLE,
+			command: null,
+			diagnostic: stderr || formatUvCommandInvalid(command),
+		};
+	}
+
+	private async resolveUvCommand(): Promise<UvCommandResolution> {
+		const configured = this.settings.uvPath.trim();
+		if (configured) {
+			if (!fs.existsSync(configured)) {
+				return {
+					source: UV_COMMAND_SOURCE_UNAVAILABLE,
+					command: null,
+					diagnostic: formatUvCommandInvalid(configured),
+				};
+			}
+			return this.validateUvCommand(
+				configured,
+				UV_COMMAND_SOURCE_CONFIGURED
+			);
+		}
+
+		const candidates = this.buildUvDiscoveryCandidates();
+		for (const [index, candidate] of candidates.entries()) {
+			if (index > 0 && !fs.existsSync(candidate)) continue;
+			const resolution = await this.validateUvCommand(
+				candidate,
+				index === 0
+					? UV_COMMAND_SOURCE_PATH
+					: UV_COMMAND_SOURCE_DEFAULT_LOCATION
+			);
+			if (resolution.command) return resolution;
+		}
+
+		return {
+			source: UV_COMMAND_SOURCE_UNAVAILABLE,
+			command: null,
+			diagnostic: RUNTIME_CONSTANTS.NOTICE_UV_REQUIRED,
+		};
+	}
+
+	private async resolvePackageManagerStrategy(): Promise<PackageManagerStrategy> {
+		const pythonPath = this.resolvePython();
+		if (this.settings.pythonPath || this.settings.marimoPath) {
+			return {
+				kind: PACKAGE_MANAGER_PIP,
+				pythonPath,
+				uvCommand: null,
+				diagnostic: null,
+			};
+		}
+		const vaultPython = this.vaultVenvPythonPath();
+		if (
+			pythonPath === vaultPython &&
+			fs.existsSync(vaultPython) &&
+			this.isVaultVenvCreatedByUv()
+		) {
+			const uv = await this.resolveUvCommand();
+			return {
+				kind: PACKAGE_MANAGER_UV,
+				pythonPath,
+				uvCommand: uv.command,
+				diagnostic: uv.command ? null : uv.diagnostic,
+			};
+		}
+		return {
+			kind: PACKAGE_MANAGER_PIP,
+			pythonPath,
+			uvCommand: null,
+			diagnostic: null,
+		};
+	}
+
 	/**
 	 * True when the vault has a `.venv` whose marimo launcher is present but
 	 * whose Python interpreter is not runnable — e.g. the base interpreter was
@@ -319,6 +492,54 @@ export class ServerManager {
 		);
 	}
 
+	private async getMarimoPackageVersionForStrategy(
+		strategy: PackageManagerStrategy
+	): Promise<string | null> {
+		if (strategy.kind === PACKAGE_MANAGER_PIP) {
+			return this.getMarimoVersion();
+		}
+		if (!strategy.uvCommand) {
+			console.warn(
+				RUNTIME_CONSTANTS.LOG_UV_COMMAND_UNAVAILABLE,
+				strategy.diagnostic
+			);
+			return null;
+		}
+		const { code, stdout } = await this.runCapture(
+			strategy.uvCommand,
+			[
+				CMD_ARG_PIP,
+				CMD_ARG_SHOW,
+				CMD_MARIMO,
+				CMD_ARG_PYTHON,
+				strategy.pythonPath,
+			],
+			NOTICE_TIMEOUT_MS
+		);
+		if (code !== 0) return null;
+		const match = /^Version:\s*(.+)$/m.exec(stdout);
+		return (
+			match?.[RUNTIME_CONSTANTS.NETSTAT_PORT_GROUP]?.trim() ??
+			RUNTIME_CONSTANTS.TEXT_INSTALLED
+		);
+	}
+
+	async getMarimoPackageVersion(): Promise<string | null> {
+		const strategy = await this.resolvePackageManagerStrategy();
+		return this.getMarimoPackageVersionForStrategy(strategy);
+	}
+
+	async describeMarimoInstallTarget(): Promise<string> {
+		const strategy = await this.resolvePackageManagerStrategy();
+		if (strategy.kind === PACKAGE_MANAGER_UV) {
+			return formatUvInstallTargetDescription(
+				strategy.uvCommand ?? CMD_UV,
+				strategy.pythonPath
+			);
+		}
+		return formatPipInstallTargetDescription(strategy.pythonPath);
+	}
+
 	/**
 	 * Drop the cached availability so the next {@link checkAvailable} call
 	 * re-detects. Call this after the interpreter/marimo path changes.
@@ -342,31 +563,57 @@ export class ServerManager {
 		return this.available;
 	}
 
-	/** Install marimo into the resolved Python via `pip install marimo`. */
+	/** Install marimo into the resolved package environment. */
 	async installMarimo(): Promise<{ ok: boolean; message: string }> {
-		const python = this.resolvePython();
 		new Notice(RUNTIME_CONSTANTS.NOTICE_INSTALLING_MARIMO);
-		const isInstalled = (await this.getMarimoVersion()) !== null;
-		const args = [CMD_ARG_M, CMD_ARG_PIP, CMD_ARG_INSTALL];
+		const strategy = await this.resolvePackageManagerStrategy();
+		if (strategy.kind === PACKAGE_MANAGER_UV && !strategy.uvCommand) {
+			const msg = formatUvCommandUnavailable(
+				strategy.diagnostic ?? RUNTIME_CONSTANTS.NOTICE_UV_REQUIRED
+			);
+			console.error(
+				RUNTIME_CONSTANTS.LOG_UV_COMMAND_UNAVAILABLE,
+				strategy.diagnostic
+			);
+			new Notice(msg, NOTICE_TIMEOUT_MS);
+			return { ok: false, message: msg };
+		}
+
+		const isInstalled =
+			(await this.getMarimoPackageVersionForStrategy(strategy)) !== null;
+		const args =
+			strategy.kind === PACKAGE_MANAGER_UV
+				? [CMD_ARG_PIP, CMD_ARG_INSTALL]
+				: [CMD_ARG_M, CMD_ARG_PIP, CMD_ARG_INSTALL];
 		if (isInstalled) {
 			args.push(CMD_ARG_UPGRADE);
 		}
 		args.push(CMD_MARIMO);
+		if (strategy.kind === PACKAGE_MANAGER_UV) {
+			args.push(CMD_ARG_PYTHON, strategy.pythonPath);
+		}
 
 		const { code, stderr } = await this.runCapture(
-			python,
+			strategy.kind === PACKAGE_MANAGER_UV
+				? strategy.uvCommand ?? CMD_UV
+				: strategy.pythonPath,
 			args,
 			PIP_INSTALL_TIMEOUT_MS
 		);
-		this.available = null; // force re-detection next time
 		if (code === 0) {
-			const version = await this.getMarimoVersion();
+			this.available = null; // force re-detection next time
+			const version = await this.getMarimoPackageVersion();
 			const msg = formatMarimoInstallSuccess(version);
 			new Notice(msg);
 			return { ok: true, message: msg };
 		}
 		const msg = formatMarimoInstallFailure(code);
-		console.error(RUNTIME_CONSTANTS.LOG_PIP_INSTALL_FAILED, stderr);
+		console.error(
+			strategy.kind === PACKAGE_MANAGER_UV
+				? RUNTIME_CONSTANTS.LOG_UV_INSTALL_FAILED
+				: RUNTIME_CONSTANTS.LOG_PIP_INSTALL_FAILED,
+			stderr
+		);
 		new Notice(msg, NOTICE_TIMEOUT_MS);
 		return { ok: false, message: msg };
 	}
