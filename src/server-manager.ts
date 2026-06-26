@@ -271,6 +271,13 @@ export class ServerManager {
 		return path.join(this.vaultPath, DIR_VENV, scriptsDir, pythonBin);
 	}
 
+	private vaultVenvUvPath(): string {
+		const isWin = process.platform === PLATFORM_WIN32;
+		const scriptsDir = isWin ? DIR_SCRIPTS_WIN : DIR_SCRIPTS_UNIX;
+		const uvBin = isWin ? EXE_UV_WIN : CMD_UV;
+		return path.join(this.vaultPath, DIR_VENV, scriptsDir, uvBin);
+	}
+
 	private vaultPyvenvConfigPath(): string {
 		return path.join(this.vaultPath, DIR_VENV, FILE_PYVENV_CFG);
 	}
@@ -289,7 +296,7 @@ export class ServerManager {
 
 	private buildUvDiscoveryCandidates(): string[] {
 		const home = process.env[ENV_USERPROFILE] ?? os.homedir();
-		const candidates = [CMD_UV];
+		const candidates = [this.vaultVenvUvPath(), CMD_UV];
 		if (process.platform === PLATFORM_WIN32) {
 			candidates.push(
 				path.join(home, DIR_UV_LOCAL, DIR_SCRIPTS_UNIX, EXE_UV_WIN),
@@ -342,13 +349,17 @@ export class ServerManager {
 		}
 
 		const candidates = this.buildUvDiscoveryCandidates();
-		for (const [index, candidate] of candidates.entries()) {
-			if (index > 0 && !fs.existsSync(candidate)) continue;
+		for (const candidate of candidates) {
+			const source =
+				candidate === CMD_UV
+					? UV_COMMAND_SOURCE_PATH
+					: UV_COMMAND_SOURCE_DEFAULT_LOCATION;
+			if (source !== UV_COMMAND_SOURCE_PATH && !fs.existsSync(candidate)) {
+				continue;
+			}
 			const resolution = await this.validateUvCommand(
 				candidate,
-				index === 0
-					? UV_COMMAND_SOURCE_PATH
-					: UV_COMMAND_SOURCE_DEFAULT_LOCATION
+				source
 			);
 			if (resolution.command) return resolution;
 		}

@@ -11,6 +11,7 @@ export default tseslint.config(
 		"dist",
 		"build",
 		"coverage",
+		"*.log",
 		".claude",
 		".env*",
 		"esbuild.config.mjs",

@@ -158,6 +158,12 @@ function createVaultVenv(
 	return realpathSync(pythonPath);
 }
 
+function vaultUvCommandPath(vault: string): string {
+	const scriptsDir = process.platform === "win32" ? "Scripts" : "bin";
+	const uvBin = process.platform === "win32" ? "uv.exe" : "uv";
+	return path.join(realpathSync(vault), ".venv", scriptsDir, uvBin);
+}
+
 interface CaptureCall {
 	cmd: string;
 	args: string[];
@@ -286,6 +292,7 @@ test("configured uvPath is preferred and invalid values do not fall back", async
 	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
 	try {
 		createVaultVenv(vault, "uv = 0.9.0\n");
+		writeFileSync(vaultUvCommandPath(vault), "");
 		const { manager, settings, internal } = makeManager(vault);
 		settings.uvPath = path.join(vault, "missing-uv");
 		let callCount = 0;
@@ -304,14 +311,82 @@ test("configured uvPath is preferred and invalid values do not fall back", async
 	}
 });
 
-test("uv discovery checks PATH before default install locations", async () => {
+test("configured uvPath wins over a usable vault-local uv command", async () => {
 	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
 	try {
+		createVaultVenv(vault, "uv = 0.9.0\n");
+		writeFileSync(vaultUvCommandPath(vault), "");
+		const configuredUv = process.execPath;
+		const { settings, internal } = makeManager(vault);
+		settings.uvPath = configuredUv;
+		const calls: CaptureCall[] = [];
+		internal.runCapture = async (cmd, args, timeoutMs) => {
+			calls.push({ cmd, args, timeoutMs });
+			return { code: 0, stdout: "uv 0.9.0", stderr: "" };
+		};
+
+		const result = await internal.resolveUvCommand();
+
+		assert.equal(result.command, configuredUv);
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0]?.cmd, configuredUv);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("uv discovery checks vault venv before PATH and default install locations", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		createVaultVenv(vault, "uv = 0.9.0\n");
 		const { internal } = makeManager(vault);
 		const candidates = internal.buildUvDiscoveryCandidates();
-		assert.equal(candidates[0], "uv");
+		assert.equal(candidates[0], vaultUvCommandPath(vault));
+		assert.equal(candidates[1], "uv");
 		assert.ok(candidates.some((candidate) => candidate.includes(".local")));
 		assert.ok(candidates.some((candidate) => candidate.includes(".cargo")));
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("uv discovery selects a usable vault-local uv command before PATH", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		createVaultVenv(vault, "uv = 0.9.0\n");
+		const uvCommand = vaultUvCommandPath(vault);
+		writeFileSync(uvCommand, "");
+		const { internal } = makeManager(vault);
+		const calls: CaptureCall[] = [];
+		internal.runCapture = async (cmd, args, timeoutMs) => {
+			calls.push({ cmd, args, timeoutMs });
+			return { code: 0, stdout: "uv 0.9.0", stderr: "" };
+		};
+
+		const result = await internal.resolveUvCommand();
+
+		assert.equal(result.command, uvCommand);
+		assert.equal(calls[0]?.cmd, uvCommand);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});
+
+test("uv discovery skips missing vault-local uv and validates PATH next", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-manager-"));
+	try {
+		createVaultVenv(vault, "uv = 0.9.0\n");
+		const { internal } = makeManager(vault);
+		const calls: CaptureCall[] = [];
+		internal.runCapture = async (cmd, args, timeoutMs) => {
+			calls.push({ cmd, args, timeoutMs });
+			return { code: 0, stdout: "uv 0.9.0", stderr: "" };
+		};
+
+		const result = await internal.resolveUvCommand();
+
+		assert.equal(result.command, "uv");
+		assert.equal(calls[0]?.cmd, "uv");
 	} finally {
 		rmSync(vault, { recursive: true, force: true });
 	}
