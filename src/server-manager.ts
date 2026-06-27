@@ -45,6 +45,11 @@ import {
 	CMD_ARG_SHOW,
 	CMD_ARG_UPGRADE,
 	CMD_ARG_VERSION,
+	CMD_EXPORT,
+	CMD_ARG_HTML,
+	CMD_ARG_OUTPUT,
+	CMD_ARG_NO_INCLUDE_CODE,
+	EXPORT_TIMEOUT_MS,
 	CMD_ARG_PYTHON,
 	CMD_ARG_HEADLESS,
 	CMD_ARG_TOKEN_PASSWORD,
@@ -501,6 +506,31 @@ export class ServerManager {
 			m?.[RUNTIME_CONSTANTS.NETSTAT_PORT_GROUP] ??
 			(out || RUNTIME_CONSTANTS.TEXT_INSTALLED)
 		);
+	}
+
+	/**
+	 * Run `marimo export html <notebook> -o <outHtmlPath>` (adding
+	 * `--no-include-code` when `includeCode` is false), reusing the same
+	 * executable resolution and capture path as every other marimo invocation.
+	 * Resolves with the captured exit info; never throws — callers treat a
+	 * non-zero `code` as failure.
+	 */
+	async exportNotebookHtml(
+		notebookAbsPath: string,
+		includeCode: boolean,
+		outHtmlPath: string
+	): Promise<{ code: number | null; stdout: string; stderr: string }> {
+		const { cmd, prefixArgs } = this.resolveCommand();
+		const args = [
+			...prefixArgs,
+			CMD_EXPORT,
+			CMD_ARG_HTML,
+			notebookAbsPath,
+			CMD_ARG_OUTPUT,
+			outHtmlPath,
+		];
+		if (!includeCode) args.push(CMD_ARG_NO_INCLUDE_CODE);
+		return this.runCapture(cmd, args, EXPORT_TIMEOUT_MS);
 	}
 
 	private async getMarimoPackageVersionForStrategy(

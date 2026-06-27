@@ -29,7 +29,9 @@ test("uses review-compliant manifest metadata", () => {
 	assert.doesNotMatch(manifest.description, /\bObsidian\b/);
 	assert.equal(manifest.authorUrl, "https://github.com/soakaye");
 	assert.equal(manifest.isDesktopOnly, true);
-	assert.equal(manifest.minAppVersion, "1.5.0");
+	// Bumped to 1.5.7 for FileManager.getAvailablePathForAttachment, used by the
+	// notebook-to-Markdown export to place image attachments per vault settings.
+	assert.equal(manifest.minAppVersion, "1.5.7");
 });
 
 test("contains no next-line lint suppressions in affected production files", () => {

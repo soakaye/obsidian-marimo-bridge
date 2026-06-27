@@ -1155,3 +1155,38 @@ test("forwards child output and exit diagnostics at debug severity", async () =>
 		rmSync(vault, { recursive: true, force: true });
 	}
 });
+
+// Feature 026: export builds the right `marimo export html` argv per mode.
+test("exportNotebookHtml builds correct argv for both modes", async () => {
+	const vault = mkdtempSync(path.join(tmpdir(), "marimo-export-args-"));
+	try {
+		const { manager, internal } = makeManager(vault);
+		const calls: string[][] = [];
+		internal.resolveCommand = () => ({ cmd: "marimo", prefixArgs: [] });
+		internal.runCapture = async (_cmd, args) => {
+			calls.push(args);
+			return { code: 0, stdout: "", stderr: "" };
+		};
+
+		await manager.exportNotebookHtml("/abs/nb.py", true, "/tmp/out.html");
+		await manager.exportNotebookHtml("/abs/nb.py", false, "/tmp/out.html");
+
+		assert.deepEqual(calls[0], [
+			"export",
+			"html",
+			"/abs/nb.py",
+			"-o",
+			"/tmp/out.html",
+		]);
+		assert.deepEqual(calls[1], [
+			"export",
+			"html",
+			"/abs/nb.py",
+			"-o",
+			"/tmp/out.html",
+			"--no-include-code",
+		]);
+	} finally {
+		rmSync(vault, { recursive: true, force: true });
+	}
+});

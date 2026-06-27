@@ -2,7 +2,7 @@
 	"id": "marimo-bridge",
 	"name": "marimo Bridge",
 	"version": "1.0.3",
-	"minAppVersion": "1.5.0",
+	"minAppVersion": "1.5.7",
 	"description": "View and edit marimo notebooks (.py) with an auto-managed local server embedded in a webview.",
 	"author": "soakaye",
 	"authorUrl": "https://github.com/soakaye",

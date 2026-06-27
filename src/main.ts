@@ -35,6 +35,7 @@ import {
 import { ServerManager } from "./server-manager";
 import { MarimoEditorView } from "./editor-view";
 import { createMarimoEmbedProcessor } from "./embed-processor";
+import { exportNotebookToMarkdown } from "./notebook-export";
 import {
 	NEW_NOTEBOOK_TEMPLATE,
 	SVG_MARIMO_LOGO,
@@ -48,6 +49,10 @@ import {
 	CMD_CREATE_NOTEBOOK_NAME,
 	CMD_RESTART_SERVER_ID,
 	CMD_RESTART_SERVER_NAME,
+	CMD_EXPORT_MARKDOWN_ID,
+	CMD_EXPORT_MARKDOWN_NAME,
+	CMD_EXPORT_OUTPUTS_MARKDOWN_ID,
+	CMD_EXPORT_OUTPUTS_MARKDOWN_NAME,
 	NOTICE_TIMEOUT_MS,
 	FILE_SERVER_RECORDS,
 	MAX_NOTEBOOK_NAME_ATTEMPTS,
@@ -177,6 +182,33 @@ export default class MarimoBridgePlugin extends Plugin {
 			},
 		});
 
+		// Export the active `.py` notebook (code + outputs) to a static Markdown
+		// note. Enabled only when a `.py` file is active.
+		this.addCommand({
+			id: CMD_EXPORT_MARKDOWN_ID,
+			name: CMD_EXPORT_MARKDOWN_NAME,
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				const isPy = file?.extension === RUNTIME_CONSTANTS.EXTENSION_PY;
+				if (checking) return isPy;
+				if (file) void exportNotebookToMarkdown(this, file.path, true);
+				return true;
+			},
+		});
+
+		// Same as above but exports only the execution results (no code).
+		this.addCommand({
+			id: CMD_EXPORT_OUTPUTS_MARKDOWN_ID,
+			name: CMD_EXPORT_OUTPUTS_MARKDOWN_NAME,
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				const isPy = file?.extension === RUNTIME_CONSTANTS.EXTENSION_PY;
+				if (checking) return isPy;
+				if (file) void exportNotebookToMarkdown(this, file.path, false);
+				return true;
+			},
+		});
+
 		// Right-click → "Open in marimo" on `.py` files in the file explorer,
 		// and on `.md` files when the Markdown context-menu option is enabled
 		// (requires a marimo Markdown integration in the user's environment).
@@ -196,6 +228,24 @@ export default class MarimoBridgePlugin extends Plugin {
 								.setTitle(RUNTIME_CONSTANTS.TITLE_OPEN_IN_MARIMO)
 								.setIcon(ICON_MARIMO_LOGO)
 								.onClick(() => void this.openMarimo(file.path))
+						);
+					}
+					if (isPy) {
+						menu.addItem((item) =>
+							item
+								.setTitle(CMD_EXPORT_MARKDOWN_NAME)
+								.setIcon(ICON_MARIMO_LOGO)
+								.onClick(
+									() => void exportNotebookToMarkdown(this, file.path, true)
+								)
+						);
+						menu.addItem((item) =>
+							item
+								.setTitle(CMD_EXPORT_OUTPUTS_MARKDOWN_NAME)
+								.setIcon(ICON_MARIMO_LOGO)
+								.onClick(
+									() => void exportNotebookToMarkdown(this, file.path, false)
+								)
 						);
 					}
 				}

@@ -296,6 +296,85 @@ export const CHAR_NEWLINE = "\n";
 export const OFFSET_ONE = 1;
 export const TEXT_RUN_SERVER_ERROR_PREFIX = "Could not start a run server for ";
 
+// Markdown export (feature 026: export notebook to static Markdown)
+export const CMD_EXPORT = "export";
+export const CMD_ARG_HTML = "html";
+export const CMD_ARG_OUTPUT = "-o";
+export const CMD_ARG_NO_INCLUDE_CODE = "--no-include-code";
+
+export const CMD_EXPORT_MARKDOWN_ID = "export-marimo-notebook-markdown";
+export const CMD_EXPORT_MARKDOWN_NAME = "Export active marimo notebook to Markdown";
+export const CMD_EXPORT_OUTPUTS_MARKDOWN_ID = "export-marimo-notebook-outputs-markdown";
+export const CMD_EXPORT_OUTPUTS_MARKDOWN_NAME = "Export active marimo notebook outputs only to Markdown";
+
+export const EXT_MD = ".md";
+export const EXT_HTML = ".html";
+export const EXT_PNG = ".png";
+export const COLLISION_SEPARATOR = "-";
+export const EXPORT_TEMP_PREFIX = "marimo-export-";
+
+/** Timeout for one `marimo export html` invocation (ms). */
+export const EXPORT_TIMEOUT_MS = 120000;
+
+export const MIME_MARKDOWN = "text/markdown";
+export const MIME_HTML = "text/html";
+export const MIME_PLAIN = "text/plain";
+export const MIME_PNG = "image/png";
+export const MIME_MARIMO_BUNDLE = "application/vnd.marimo+mimebundle";
+
+/** Marker and anchor that bracket the embedded notebook session JSON. */
+export const CONFIG_MARKER = "__MARIMO_MOUNT_CONFIG__";
+export const CONFIG_FREEZE_ANCHOR = "Object.freeze(";
+
+export const CH_OPEN_BRACE = "{";
+export const CH_CLOSE_BRACE = "}";
+export const CH_QUOTE = '"';
+export const CH_SPACE = " ";
+export const CH_AMP = "&";
+export const CH_LT = "<";
+export const CH_GT = ">";
+export const CH_APOS = "'";
+
+export const ENCODING_BASE64 = "base64";
+export const DATA_URI_PREFIX = "data:";
+export const BASE64_MARKER = ";base64,";
+
+/** Sentinel wrapping an image placeholder before its attachment link is resolved. */
+export const IMAGE_TOKEN_OPEN = "@@marimo-image-";
+export const IMAGE_TOKEN_CLOSE = "@@";
+
+/** Custom-element tag prefix marimo emits for interactive widgets. */
+export const TAG_MARIMO_PREFIX = "<marimo-";
+
+/** Regex capture-group indices used when reading HTML attributes. */
+export const REGEX_GROUP_FIRST = 1;
+export const REGEX_GROUP_SECOND = 2;
+
+// Markdown emit tokens
+export const MD_FENCE = "```";
+export const MD_LANG_PYTHON = "python";
+export const MD_BOLD = "**";
+export const MD_ITALIC = "_";
+export const MD_CODE = "`";
+export const MD_BULLET = "- ";
+export const MD_ORDERED_MARKER = ". ";
+export const MD_LINK_OPEN = "[";
+export const MD_LINK_MID = "](";
+export const MD_LINK_CLOSE = ")";
+export const MD_IMAGE_PREFIX = "!";
+export const MD_TABLE_PIPE = " | ";
+export const MD_TABLE_EDGE = "|";
+export const MD_TABLE_SEP_CELL = " --- ";
+export const MD_BLANK_LINE = "\n\n";
+
+// HTML entities decoded during conversion
+export const ENT_AMP = "&amp;";
+export const ENT_LT = "&lt;";
+export const ENT_GT = "&gt;";
+export const ENT_QUOT = "&quot;";
+export const ENT_APOS = "&#39;";
+export const ENT_NBSP = "&nbsp;";
+
 // Template & SVG
 export const NEW_NOTEBOOK_TEMPLATE = `import marimo
 
@@ -551,4 +630,40 @@ export function formatUvInstallTargetDescription(
 	pythonPath: string
 ): string {
 	return `${uvCommand} pip install marimo --python ${pythonPath}`;
+}
+
+export function formatExportSuccessNotice(markdownPath: string): string {
+	return `Exported notebook to ${markdownPath}`;
+}
+
+export function formatExportFailureNotice(reason: string): string {
+	return `marimo export failed: ${reason}`;
+}
+
+/** Diagnostic used when the export ran but no embedded session data was found. */
+export function formatExportParseFailure(notebookName: string): string {
+	return `could not read export data from ${notebookName}`;
+}
+
+/** Heading prefix of `level` hashes followed by a space. */
+export function formatHeadingPrefix(level: number): string {
+	return `${CHAR_HASH.repeat(level)}${CH_SPACE}`;
+}
+
+/** Collision-avoiding base name: `base-1`, `base-2`, … */
+export function formatCollisionBase(base: string, index: number): string {
+	return `${base}${COLLISION_SEPARATOR}${index.toString()}`;
+}
+
+/** Attachment image base name derived from the notebook and output index. */
+export function formatExportImageName(
+	notebookBase: string,
+	index: number
+): string {
+	return `${notebookBase}${COLLISION_SEPARATOR}${index.toString()}${EXT_PNG}`;
+}
+
+/** Placeholder embedded in Markdown until the image attachment link is resolved. */
+export function formatImageToken(index: number): string {
+	return `${IMAGE_TOKEN_OPEN}${index.toString()}${IMAGE_TOKEN_CLOSE}`;
 }

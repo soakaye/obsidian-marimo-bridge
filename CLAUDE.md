@@ -37,5 +37,5 @@ npm run lint    # eslint (flat config, eslint-plugin-obsidianmd)
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/016-markdown-open-in-marimo/plan.md`
+`specs/026-export-notebook-markdown/plan.md`
 <!-- SPECKIT END -->
