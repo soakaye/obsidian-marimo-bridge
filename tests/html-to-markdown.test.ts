@@ -62,6 +62,38 @@ test("routes data-URI images to the sink and keeps external images as links", ()
 	assert.match(md, /!\[ext\]\(https:\/\/example\.com\/x\.png\)/);
 });
 
+test("converts marimo-tex inline LaTeX to Obsidian math", () => {
+	const md = htmlToMarkdown(
+		'<span class="paragraph"><marimo-tex class="arithmatex">||(e^1 = 2.718||)</marimo-tex></span>',
+		new FakeSink()
+	);
+	assert.match(md, /\$e\^1 = 2\.718\$/);
+	assert.doesNotMatch(md, /marimo-tex/);
+});
+
+test("converts marimo-tex block LaTeX to a math block", () => {
+	const md = htmlToMarkdown(
+		'<marimo-tex class="arithmatex">||[x = 1||]</marimo-tex>',
+		new FakeSink()
+	);
+	assert.match(md, /\$\$x = 1\$\$/);
+});
+
+test("renderOutput keeps a math (marimo-tex) markdown output", () => {
+	const sink = new FakeSink();
+	const out = renderOutput(
+		{
+			data: {
+				"text/markdown":
+					'<span class="markdown"><span class="paragraph"><marimo-tex class="arithmatex">||(e^1 = 2.718||)</marimo-tex></span></span>',
+			},
+		},
+		sink
+	);
+	assert.ok(out, "math output must not be dropped as a widget");
+	assert.match(out, /\$e\^1 = 2\.718\$/);
+});
+
 test("renderOutput converts markdown output and ignores widgets", () => {
 	const config = extractMountConfig(fixture("export-widget.html"));
 	assert.ok(config);

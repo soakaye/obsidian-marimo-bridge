@@ -51,11 +51,25 @@ uvx marimo export html widget.py -o tests/fixtures/export-widget.html --no-inclu
    attachment location and embedded via a generated Markdown link and is visible
    in the note; the `mo.image(url)` remains an external link (not downloaded).
 
-### Scenario D — Widgets & console ignored (FR-010, FR-018)
+### Scenario D — Widgets & console ignored, math kept (FR-010, FR-010a, FR-018)
 1. Use a notebook with `x = mo.ui.slider(1, 9); x`, a cell printing to stdout,
-   and a cell `mo.md(f"value is {x.value}")`.
-2. Export. Expect: no `<marimo-…>` markup anywhere; no stdout text; the derived
-   `value is 1` line (export-time snapshot) is present.
+   and `mo.md(f"$e^{{{x.value}}} = {math.exp(x.value):.3f}$")`.
+2. Export (with the notebook open in the editor). Expect: no `<marimo-…>` markup;
+   no stdout text; the slider's `<marimo-ui-element>` output is dropped; the math
+   cell renders as Obsidian math (`$e^1 = 2.718$`), not dropped as a widget.
+
+### Scenario H — Live interactive values (FR-019, SC-007)
+1. Open the Scenario-D notebook **in the marimo editor** and move the slider to 5.
+2. Export. Expect: the derived line reads `$e^5 = 148.413$` (the live value), and
+   **no** warning dialog appears.
+
+### Scenario I — Not-open warning + fallback (FR-020, FR-022, SC-009)
+1. With the notebook **not** open in a marimo editor (e.g. export from the file
+   menu without opening it), run an export.
+2. Expect: a warning modal "Export without live values" appears.
+   - **Cancel** → no `.md` is written.
+   - **Export with initial values** → the CLI fallback runs and the note is
+     produced with initial widget values (slider at 1).
 
 ### Scenario E — Never overwrite (FR-011)
 1. Ensure `notebook.md` already exists next to `notebook.py`.
@@ -72,9 +86,12 @@ uvx marimo export html widget.py -o tests/fixtures/export-widget.html --no-inclu
 
 ## Success criteria cross-check
 
-- SC-001 single action, no prompt → A/B.
+- SC-001 single action, no mode prompt → A/B.
 - SC-002 md/text/image fidelity → A/C.
 - SC-003 zero widget markup → D.
 - SC-004 zero leftover temp files → A/F.
 - SC-005 failure never destroys existing note → E/F.
 - SC-006 with-code vs outputs-only differ only by code blocks → A vs B.
+- SC-007 live values reflected → H.
+- SC-008 math rendered, no `<marimo-tex>` markup → D.
+- SC-009 not-open warning before any write; cancel leaves vault unchanged → I.

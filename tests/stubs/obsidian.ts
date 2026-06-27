@@ -46,6 +46,35 @@ export class PluginSettingTab {
 	constructor(_app: unknown, _plugin: unknown) {}
 }
 
+class FakeModalElement {
+	setText(_value: string): void {}
+	createEl(_tag: string, _options?: unknown): FakeModalElement {
+		return new FakeModalElement();
+	}
+}
+
+export class Modal {
+	app: unknown;
+	titleEl = new FakeModalElement();
+	contentEl = new FakeModalElement();
+
+	constructor(app: unknown) {
+		this.app = app;
+	}
+
+	open(): void {
+		this.onOpen();
+	}
+
+	close(): void {
+		this.onClose();
+	}
+
+	onOpen(): void {}
+
+	onClose(): void {}
+}
+
 export class ButtonComponent {
 	text = "";
 	disabled = false;

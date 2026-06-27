@@ -36,6 +36,7 @@ import { ServerManager } from "./server-manager";
 import { MarimoEditorView } from "./editor-view";
 import { createMarimoEmbedProcessor } from "./embed-processor";
 import { exportNotebookToMarkdown } from "./notebook-export";
+import { confirmExportWithoutLiveSession } from "./export-warning-modal";
 import {
 	NEW_NOTEBOOK_TEMPLATE,
 	SVG_MARIMO_LOGO,
@@ -313,6 +314,35 @@ export default class MarimoBridgePlugin extends Plugin {
 		// Tear down every server we started (best-effort; safe if none ran).
 		// `serverManager` is unset when onload bailed early (non-FileSystem vault).
 		this.serverManager?.stopAll();
+	}
+
+	/**
+	 * Find an open marimo editor view currently showing `notebookPath`, so the
+	 * export can capture that running session's live widget values. Returns
+	 * `null` when the notebook is not open in a marimo editor.
+	 */
+	public findOpenNotebookView(
+		notebookPath: string
+	): MarimoEditorView | null {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_MARIMO)) {
+			const view = leaf.view;
+			if (
+				view instanceof MarimoEditorView &&
+				view.getCurrentFile() === notebookPath
+			) {
+				return view;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Warn (modal) that exporting a notebook not open in the marimo editor will
+	 * use initial widget values via the CLI fallback. Resolves `true` to proceed,
+	 * `false` to cancel.
+	 */
+	public confirmExportWithoutLiveSession(): Promise<boolean> {
+		return confirmExportWithoutLiveSession(this.app);
 	}
 
 	/**

@@ -43,9 +43,15 @@ import {
 	MIME_MARKDOWN,
 	MIME_PLAIN,
 	MIME_PNG,
+	MD_MATH_BLOCK,
+	MD_MATH_INLINE,
 	REGEX_GROUP_FIRST,
 	REGEX_GROUP_SECOND,
-	TAG_MARIMO_PREFIX,
+	TAG_MARIMO_UI_ELEMENT,
+	TEX_BLOCK_CLOSE,
+	TEX_BLOCK_OPEN,
+	TEX_INLINE_CLOSE,
+	TEX_INLINE_OPEN,
 	RUNTIME_CONSTANTS,
 	formatHeadingPrefix,
 } from "./constants";
@@ -92,9 +98,27 @@ function convertImage(tag: string, sink: ImageSink): string {
 	return MD_IMAGE_PREFIX + MD_LINK_OPEN + alt + MD_LINK_MID + src + MD_LINK_CLOSE;
 }
 
+/** Convert marimo's rendered LaTeX (`||(...||)` / `||[...||]`) to Obsidian math. */
+function convertTex(inner: string): string {
+	const math = decodeEntities(inner)
+		.split(TEX_BLOCK_OPEN)
+		.join(MD_MATH_BLOCK)
+		.split(TEX_BLOCK_CLOSE)
+		.join(MD_MATH_BLOCK)
+		.split(TEX_INLINE_OPEN)
+		.join(MD_MATH_INLINE)
+		.split(TEX_INLINE_CLOSE)
+		.join(MD_MATH_INLINE);
+	return math;
+}
+
 /** Convert inline-level tags, strip the rest, and decode HTML entities. */
 function convertInline(html: string, sink: ImageSink): string {
-	let s = html.replace(/<img\b[^>]*>/gi, (tag) => convertImage(tag, sink));
+	let s = html.replace(
+		/<marimo-tex\b[^>]*>([\s\S]*?)<\/marimo-tex>/gi,
+		(_m, inner: string) => convertTex(inner)
+	);
+	s = s.replace(/<img\b[^>]*>/gi, (tag) => convertImage(tag, sink));
 	s = s.replace(
 		/<a\b[^>]*?href\s*=\s*"([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,
 		(_m, href: string, inner: string) =>
@@ -229,7 +253,7 @@ function dataRecord(output: CellOutput): Record<string, string> | null {
 }
 
 function containsWidget(record: Record<string, string>): boolean {
-	return Object.values(record).some((v) => v.includes(TAG_MARIMO_PREFIX));
+	return Object.values(record).some((v) => v.includes(TAG_MARIMO_UI_ELEMENT));
 }
 
 /**

@@ -223,6 +223,34 @@ export const INJECTION_SCRIPT = `(function () {
 		return null;
 	};
 
+	// Capture the marimo client's request headers (session id, server token,
+	// auth) so the host can replay them to export the LIVE session as HTML,
+	// reflecting current widget values. We only remember requests that carry a
+	// Marimo-Session-Id, i.e. real kernel RPC/health calls.
+	var __nativeFetch = window.fetch;
+	window.__marimoBridgeHeaders = null;
+	window.fetch = function (input, init) {
+		try {
+			var raw = init && init.headers;
+			if (raw) {
+				var obj = {};
+				if (typeof Headers !== "undefined" && raw instanceof Headers) {
+					raw.forEach(function (v, k) { obj[k] = v; });
+				} else if (Array.isArray(raw)) {
+					raw.forEach(function (pair) { obj[pair[0]] = pair[1]; });
+				} else {
+					for (var k in raw) { obj[k] = raw[k]; }
+				}
+				if (obj["Marimo-Session-Id"] || obj["marimo-session-id"]) {
+					window.__marimoBridgeHeaders = obj;
+				}
+			}
+		} catch (e) {
+			// Ignore header capture failures; export falls back to the CLI.
+		}
+		return __nativeFetch.apply(this, arguments);
+	};
+
 	// Capture phase: run before the page's own handlers and cancel the default
 	// navigation for links that target a new window/tab.
 	window.addEventListener(
@@ -287,6 +315,7 @@ export const KEY_HEIGHT = "height";
 export const MODE_EDIT = "edit";
 export const MODE_RUN = "run";
 export const TAG_DIV = "div";
+export const TAG_PARAGRAPH = "p";
 export const CHAR_COLON = ":";
 export const CHAR_HASH = "#";
 export const RADIX_DECIMAL = 10;
@@ -343,8 +372,16 @@ export const BASE64_MARKER = ";base64,";
 export const IMAGE_TOKEN_OPEN = "@@marimo-image-";
 export const IMAGE_TOKEN_CLOSE = "@@";
 
-/** Custom-element tag prefix marimo emits for interactive widgets. */
-export const TAG_MARIMO_PREFIX = "<marimo-";
+/** Wrapper element marimo emits for interactive UI widgets (`mo.ui.*`). */
+export const TAG_MARIMO_UI_ELEMENT = "<marimo-ui-element";
+
+/** marimo wraps rendered LaTeX in this non-interactive element. */
+export const TEX_INLINE_OPEN = "||(";
+export const TEX_INLINE_CLOSE = "||)";
+export const TEX_BLOCK_OPEN = "||[";
+export const TEX_BLOCK_CLOSE = "||]";
+export const MD_MATH_INLINE = "$";
+export const MD_MATH_BLOCK = "$$";
 
 /** Regex capture-group indices used when reading HTML attributes. */
 export const REGEX_GROUP_FIRST = 1;
@@ -366,6 +403,13 @@ export const MD_TABLE_PIPE = " | ";
 export const MD_TABLE_EDGE = "|";
 export const MD_TABLE_SEP_CELL = " --- ";
 export const MD_BLANK_LINE = "\n\n";
+
+// Warning modal shown when exporting a notebook that is not open in a marimo
+// editor (no live session → CLI fallback uses initial widget values).
+export const EXPORT_WARNING_TITLE = "Export without live values";
+export const EXPORT_WARNING_BODY = "This notebook is not open in the marimo editor, so the export cannot capture your current interactive values (e.g. slider positions). It will run the notebook fresh and use initial values. Open the notebook in marimo first to export the values you see. Continue anyway?";
+export const EXPORT_WARNING_CONTINUE = "Export with initial values";
+export const EXPORT_WARNING_CANCEL = "Cancel";
 
 // HTML entities decoded during conversion
 export const ENT_AMP = "&amp;";
@@ -666,4 +710,37 @@ export function formatExportImageName(
 /** Placeholder embedded in Markdown until the image attachment link is resolved. */
 export function formatImageToken(index: number): string {
 	return `${IMAGE_TOKEN_OPEN}${index.toString()}${IMAGE_TOKEN_CLOSE}`;
+}
+
+/**
+ * Script run inside the marimo `<webview>` to export the LIVE session as HTML
+ * via `POST /api/export/html`, reusing the headers captured by the injection
+ * script. Resolves to the HTML string, or `null` when no live session/headers
+ * are available (caller then falls back to the CLI export).
+ */
+export function formatLiveExportScript(includeCode: boolean): string {
+	return `(async function () {
+	try {
+		var headers = window.__marimoBridgeHeaders;
+		if (!headers) return null;
+		var sent = {};
+		for (var k in headers) { sent[k] = headers[k]; }
+		sent["Content-Type"] = "application/json";
+		var url = new URL("/api/export/html", window.location.href).href;
+		var res = await fetch(url, {
+			method: "POST",
+			headers: sent,
+			body: JSON.stringify({
+				download: false,
+				files: [],
+				includeCode: ${includeCode ? "true" : "false"},
+				assetUrl: null
+			})
+		});
+		if (!res.ok) return null;
+		return await res.text();
+	} catch (e) {
+		return null;
+	}
+})()`;
 }

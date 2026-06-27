@@ -107,8 +107,26 @@ Single-project Obsidian plugin: source in `src/`, tests in `tests/` (bundled by 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 - [X] T019 Verify `tests/constants-policy.test.ts` passes with the new literals (no hardcoded strings/numbers left in `src/notebook-export.ts`, `src/marimo-mount-config.ts`, `src/html-to-markdown.ts`, or the new `main.ts`/`server-manager.ts` code — Constitution VI).
-- [ ] T020 [P] Run `quickstart.md` scenarios A–G manually in Obsidian Desktop against a real notebook (images, widgets, never-overwrite, failure atomicity, enablement).
+- [ ] T020 [P] Run `quickstart.md` scenarios A–I manually in Obsidian Desktop against a real notebook (images, math, widgets, never-overwrite, failure atomicity, enablement, live values, not-open warning).
 - [X] T021 Run the full gate: `npm test`, `npm run build`, `npm run lint` — all green.
+
+---
+
+## Phase 7: Live-session export, math, and not-open warning (post-MVP)
+
+**Purpose**: Reflect the user's live interactive values (slider, etc.) instead of
+re-running with initial values, render math, and warn before the initial-values
+fallback. Added after manual testing showed CLI export reverts widget values.
+Maps to FR-005 (amended), FR-010/FR-010a (math vs widget), FR-019–FR-022, SC-007–SC-009.
+
+- [X] T022 Narrow widget detection to `<marimo-ui-element>` (not any `<marimo-*>`) and convert `<marimo-tex>` math (`||(...||)`/`||[...||]` → `$...$`/`$$...$$`) in `src/html-to-markdown.ts`; add tests in `tests/html-to-markdown.test.ts`. (research R5/R5a)
+- [X] T023 Add `MarimoEditorView.exportLiveHtml()` / `getCurrentFile()` in `src/editor-view.ts`, and the `window.fetch` header-capture + `formatLiveExportScript()` in `src/constants.ts` (live `POST /api/export/html`). (contracts §6, research R12)
+- [X] T024 Add `MarimoBridgePlugin.findOpenNotebookView()` in `src/main.ts`; make `src/notebook-export.ts` prefer the live HTML and fall back to CLI; add live-vs-CLI tests in `tests/notebook-export.test.ts`. (contracts §5/§6)
+- [X] T025 Add `src/export-warning-modal.ts` (`confirmExportWithoutLiveSession`) + `MarimoBridgePlugin.confirmExportWithoutLiveSession()`; warn before the CLI fallback only when the notebook is not open; cancel aborts. Add proceed/cancel/no-warn-when-live tests; add `Modal` to `tests/stubs/obsidian.ts`. (contracts §7, research R13)
+- [X] T026 Bump `manifest.json` `minAppVersion` to 1.5.7 (for `getAvailablePathForAttachment`) and update `tests/review-compliance.test.ts`.
+
+**Checkpoint**: Live values reflected when the editor is open; math rendered;
+not-open exports warn first. Full gate green (116 tests).
 
 ---
 

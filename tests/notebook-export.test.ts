@@ -3,6 +3,7 @@ import {
 	copyFileSync,
 	existsSync,
 	mkdtempSync,
+	readFileSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,12 +23,15 @@ interface Harness {
 	attachmentCalls: { name: string; source: string }[];
 	opened: string[];
 	lastOutHtml: string | null;
+	confirmCount: number;
 }
 
 function makeHarness(options: {
 	fixture: string | null;
 	exitCode?: number;
 	existing?: string[];
+	liveFixture?: string;
+	confirm?: boolean;
 }): Harness {
 	const vaultDir = mkdtempSync(path.join(tmpdir(), "marimo-export-vault-"));
 	writeFileSync(path.join(vaultDir, "nb.py"), "import marimo\n");
@@ -46,6 +50,7 @@ function makeHarness(options: {
 		attachmentCalls,
 		opened,
 		lastOutHtml: null,
+		confirmCount: 0,
 		plugin: null as unknown as MarimoBridgePlugin,
 	};
 
@@ -105,9 +110,25 @@ function makeHarness(options: {
 		},
 	};
 
+	const live = options.liveFixture;
+	const findOpenNotebookView = (_path: string) => {
+		if (!live) return null;
+		return {
+			exportLiveHtml: async (_includeCode: boolean): Promise<string> =>
+				readFileSync(path.join(fixtures, live), "utf8"),
+		};
+	};
+
+	const confirmExportWithoutLiveSession = async (): Promise<boolean> => {
+		harness.confirmCount++;
+		return options.confirm ?? true;
+	};
+
 	harness.plugin = {
 		app: { vault, fileManager, workspace },
 		servers,
+		findOpenNotebookView,
+		confirmExportWithoutLiveSession,
 	} as unknown as MarimoBridgePlugin;
 
 	return harness;
@@ -168,6 +189,47 @@ test("never overwrites an existing note (uses a non-colliding name)", async () =
 
 	assert.equal(h.created.has("nb.md"), false);
 	assert.ok(h.created.has("nb-1.md"));
+});
+
+test("prefers the live session export when the notebook is open (no CLI run)", async () => {
+	resetNoticeMessages();
+	const h = makeHarness({ fixture: null, liveFixture: "export-basic.html" });
+	await exportNotebookToMarkdown(h.plugin, "nb.py", false);
+
+	assert.equal(h.lastOutHtml, null, "CLI export must not run when live session is used");
+	const md = h.created.get("nb.md");
+	assert.ok(md);
+	assert.match(md, /# Hello/);
+});
+
+test("falls back to CLI when the notebook is not open (after the user confirms)", async () => {
+	resetNoticeMessages();
+	// No liveFixture → findOpenNotebookView returns null → warn → confirm → CLI.
+	const h = makeHarness({ fixture: "export-basic.html", confirm: true });
+	await exportNotebookToMarkdown(h.plugin, "nb.py", false);
+
+	assert.equal(h.confirmCount, 1, "the warning dialog must be shown when not open");
+	assert.ok(h.lastOutHtml, "CLI export should have run");
+	assert.ok(h.created.has("nb.md"));
+});
+
+test("cancelling the warning dialog aborts the export (no CLI run, no note)", async () => {
+	resetNoticeMessages();
+	const h = makeHarness({ fixture: "export-basic.html", confirm: false });
+	await exportNotebookToMarkdown(h.plugin, "nb.py", false);
+
+	assert.equal(h.confirmCount, 1);
+	assert.equal(h.lastOutHtml, null, "CLI export must not run when cancelled");
+	assert.equal(h.created.size, 0, "no note is written when cancelled");
+});
+
+test("does not warn when the notebook is open in a live session", async () => {
+	resetNoticeMessages();
+	const h = makeHarness({ fixture: null, liveFixture: "export-basic.html" });
+	await exportNotebookToMarkdown(h.plugin, "nb.py", false);
+
+	assert.equal(h.confirmCount, 0, "no warning when a live session is used");
+	assert.ok(h.created.has("nb.md"));
 });
 
 test("failed export writes no note and cleans up the temp file", async () => {

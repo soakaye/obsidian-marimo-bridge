@@ -77,15 +77,30 @@ Observed mime types and chosen handling:
 
 ## R5. Interactive UI widgets
 
-- **Decision**: Detect `<marimo-ui-element>` and any `<marimo-*>` custom element
-  in an output's HTML and **drop that output entirely** (no placeholder).
-  Derived cells that referenced a widget's value still export normally, because
-  their output captured the value at export time.
+- **Decision**: Treat an output as an interactive widget only when its HTML
+  contains `<marimo-ui-element>`, and **drop that output entirely** (no
+  placeholder). Do **not** key on the broader `<marimo-*>` prefix — marimo also
+  emits non-interactive custom elements (e.g. `<marimo-tex>` for math) that DO
+  have a static form and must be converted, not dropped. Derived cells that
+  referenced a widget's value still export normally (their output captured the
+  value of the exported session).
 - **Rationale**: Confirmed a slider exports as
-  `<marimo-ui-element><marimo-slider .../></marimo-ui-element>` — a custom
-  element with no static rendering. Per clarification, no placeholder is wanted.
+  `<marimo-ui-element><marimo-slider .../></marimo-ui-element>` (no static
+  rendering). An earlier `<marimo-*>` check wrongly dropped `<marimo-tex>` math
+  cells; narrowing to `<marimo-ui-element>` fixed it.
 - **Alternatives considered**: Render initial value / placeholder text —
-  rejected by user.
+  rejected by user. Broad `<marimo-*>` match — rejected (drops math).
+
+## R5a. Rendered LaTeX / math (`<marimo-tex>`)
+
+- **Decision**: Convert `<marimo-tex>` to native Obsidian math. marimo encodes
+  delimiters as `||(` / `||)` (inline) and `||[` / `||]` (block); map these to
+  `$...$` and `$$...$$` respectively and unwrap the element.
+- **Rationale**: Verified an output `mo.md("$e^{x.value}=...$")` exports as
+  `<marimo-tex class="arithmatex">||(e^1 = 2.718||)</marimo-tex>`; the browser
+  renders it via KaTeX. Mapping to `$...$` lets Obsidian's MathJax render it.
+- **Alternatives considered**: Leave `||(...||)` as text — rejected (not valid
+  Obsidian math). Strip math entirely — rejected (loses content).
 
 ## R6. Console output (stdout/stderr)
 
@@ -103,12 +118,14 @@ Observed mime types and chosen handling:
 - **Rationale**: Constitution "keep dependencies minimal" + the project ships
   **zero** runtime dependencies today (only devDependencies). marimo's rendered
   output is a constrained, known subset, so a focused converter is small,
-  testable, and avoids bundling/`external` concerns. DOM parsing uses the
-  Electron-provided `DOMParser`/`document` available in the Obsidian renderer.
+  testable, and avoids bundling/`external` concerns. The converter is
+  **dependency-free and DOM-free** (ordered regex/string transforms), so it runs
+  identically under Node `node --test` and in the Obsidian renderer.
 - **Alternatives considered**:
   - `turndown` — rejected: first runtime dependency, larger bundle, overkill for
     the tag subset.
-  - Regex-only stripping — rejected: fragile for nested lists/tables.
+  - Browser `DOMParser` — rejected: not available under `node --test`, would
+    force a DOM shim and split prod/test behavior.
 
 ## R8. Running the export subprocess
 
@@ -130,8 +147,7 @@ Observed mime types and chosen handling:
   `createUntitledNotebook`'s collision loop). Write with `vault.create`.
 - **Rationale**: Clarification 2026-06-27 — never overwrite; reuse the existing
   collision-avoidance idiom.
-- **Alternatives considered**: Overwrite / confirm modal — rejected by user /
-  by FR-015 (no modal).
+- **Alternatives considered**: Overwrite / confirm modal — rejected by user.
 
 ## R10. Failure atomicity and temp cleanup
 
@@ -155,3 +171,45 @@ Observed mime types and chosen handling:
 - **Rationale**: Matches established patterns in `main.ts`.
 - **Alternatives considered**: Always-enabled commands with runtime guard —
   rejected: worse UX, inconsistent with existing command.
+
+## R12. HTML source — live session vs CLI fallback
+
+- **Decision**: Prefer the **live running session** when the notebook is open in
+  a marimo editor: run JS in that view's `<webview>` to `POST /api/export/html`,
+  which serializes the running kernel's `session_view` (current widget values)
+  **without re-executing**. Fall back to the CLI (`marimo export html`, R8) when
+  the notebook is not open or the live export returns nothing. Both produce the
+  same `__MARIMO_MOUNT_CONFIG__` HTML, so the converter is source-agnostic.
+- **Rationale**: Verified in marimo's server code that
+  `Exporter.export_as_html(session_view=...)` only serializes the given
+  session_view, while the CLI path calls `run_app_until_completion()` to re-run
+  the notebook fresh (initial values). Only the server endpoint reflects the
+  user's live interactions. The webview already holds an authenticated session,
+  so calling the endpoint from inside it avoids re-implementing auth/session.
+- **Session identity**: the injection script wraps `window.fetch` to capture the
+  marimo client's request headers (which carry `Marimo-Session-Id` plus server
+  token / auth); the export script replays them. This relies only on the public
+  header contract, not on minified frontend internals.
+- **Alternatives considered**:
+  - Reverse-engineer the session id from the minified bundle — rejected: fragile
+    across marimo versions.
+  - Host-side Electron `webRequest` header capture — rejected: more invasive than
+    a self-contained webview script.
+  - `marimo export html-wasm` — rejected: heavy, and not what the editor session
+    represents.
+
+## R13. Warning before the not-open CLI fallback
+
+- **Decision**: When the notebook is **not** open in a marimo editor, show a
+  confirmation modal (`export-warning-modal.ts`) before the CLI fallback,
+  explaining that initial (not live) values will be used, with "Export with
+  initial values" / "Cancel". Cancel aborts with no note. When the notebook IS
+  open but the live export fails, fall back silently (no modal).
+- **Rationale**: Clarification 2026-06-27 (4) — users expect "what I see is what
+  I get"; silently exporting initial values surprised them. The modal is a safety
+  confirmation, distinct from the forbidden *mode-selection* prompt (FR-015).
+- **Testability**: the confirm is exposed as `plugin.confirmExportWithoutLiveSession()`
+  so the orchestrator stays unit-testable with a stubbed result; the modal class
+  is a thin UI shell.
+- **Alternatives considered**: Toast-and-proceed / silent fallback / hard-abort —
+  rejected by user in favor of proceed-or-cancel.

@@ -13,6 +13,7 @@ import { getFilePathFromUrl } from "./url-utils";
 import {
 	VIEW_TYPE_MARIMO,
 	ICON_MARIMO_LOGO,
+	formatLiveExportScript,
 	CLS_BRIDGE_VIEW,
 	CLS_LOADING,
 	CLS_LOADING_OVERLAY,
@@ -154,6 +155,30 @@ export class MarimoEditorView extends ItemView {
 
 	getIcon(): string {
 		return ICON_MARIMO_LOGO;
+	}
+
+	/** Vault-relative path of the notebook this view is showing, if any. */
+	getCurrentFile(): string | undefined {
+		return this.currentFile;
+	}
+
+	/**
+	 * Export the LIVE marimo session (current widget values) to HTML by calling
+	 * the running edit server's `/api/export/html` from inside the webview.
+	 * Returns the HTML string, or `null` when the webview/session is not ready
+	 * (the caller then falls back to a fresh CLI export).
+	 */
+	async exportLiveHtml(includeCode: boolean): Promise<string | null> {
+		const webview = this.webview as MarimoWebviewElement | null;
+		if (!webview?.executeJavaScript) return null;
+		try {
+			const result = await webview.executeJavaScript(
+				formatLiveExportScript(includeCode)
+			);
+			return isString(result) ? result : null;
+		} catch {
+			return null;
+		}
 	}
 
 	/**

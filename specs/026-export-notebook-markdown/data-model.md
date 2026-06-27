@@ -63,8 +63,12 @@ Classification (determines rendering / ignore):
   `image/png` → attachment.
 - **image** — direct `image/png` data URI → attachment.
 - **text** — `text/plain` only → plain text.
-- **widget** — HTML contains `<marimo-ui-element>` / `<marimo-*>` → **ignored**.
-- **unsupported** — none of the above → ignored or brief "unsupported" note.
+- **math** — HTML contains `<marimo-tex>` → convert `||(...||)`/`||[...||]` to
+  `$...$`/`$$...$$` (NOT a widget).
+- **widget** — HTML contains `<marimo-ui-element>` (interactive `mo.ui.*`) →
+  **ignored**. Detection is specifically `<marimo-ui-element>`, not any
+  `<marimo-*>` (so `<marimo-tex>` is not dropped).
+- **unsupported** — none of the above → ignored.
 
 ## RenderedImage
 
@@ -89,27 +93,45 @@ inline links in the converted Markdown.
 | `markdown` | `string` | Full note contents |
 | `images` | `RenderedImage[]` | Attachments saved |
 
+## ExportSource
+
+How the HTML is obtained (see research R12). The converter is agnostic to which.
+
+| Source | When | Values | Re-runs notebook? |
+|--------|------|--------|-------------------|
+| `live` | notebook open in a marimo editor | current widget values | No (serializes the running `session_view`) |
+| `cli` | not open, or live export returned nothing | initial values | Yes (`marimo export html`) |
+
 ## State / flow
 
 ```text
 ExportRequest
-  → resolve env (ServerManager.resolveCommand)
-  → run `marimo export html` to temp .html        [fail ⇒ cleanup temp, abort, no .md]
-  → read temp .html text
-  → extract+normalize+parse __MARIMO_MOUNT_CONFIG__ [fail ⇒ cleanup temp, abort]
+  → resolveVaultNotebook (must be a .py inside the vault)         [fail ⇒ notice, abort]
+  → liveView = findOpenNotebookView(notebookPath)
+  → html = liveView ? await liveView.exportLiveHtml(includeCode) : null   (source = live)
+  → if html === null:
+        if NOT liveView:                                          (notebook not open)
+            proceed = await confirmExportWithoutLiveSession()     [cancel ⇒ abort, no .md]
+        run `marimo export html` to temp .html (source = cli)     [non-zero ⇒ notice, abort]
+        html = read temp .html text
+  → extract+normalize+parse __MARIMO_MOUNT_CONFIG__               [null ⇒ notice, abort]
   → for each (NotebookCell, SessionCell):
         let isMarkdownCell = any output has `text/markdown`
         emit ```python fence``` ONLY if include-code AND code non-empty AND NOT isMarkdownCell
-        for each CellOutput: classify → render | save image | ignore
+        for each CellOutput: classify → render (md/html/math) | save image | ignore (widget/console)
         (Markdown cells render as native Markdown only, no code fence — FR-006 exception)
   → choose non-colliding markdownPath
   → save image attachments (createBinary) + build links
-  → vault.create(markdownPath, markdown)            [fail ⇒ abort]
-  → cleanup temp .html  (finally, always)
-  → open markdownPath in Obsidian
+  → vault.create(markdownPath, markdown)
+  → cleanup temp .html  (finally, always — only created on the CLI path)
+  → open markdownPath in Obsidian + success notice
 ```
 
 Invariants:
 - Existing files are never overwritten (FR-011).
-- Temp `.html` never survives the operation (FR-013/FR-014).
-- Console output and widgets never appear in the result (FR-010/FR-018).
+- Temp `.html` never survives the operation (FR-013/FR-014); the live path
+  creates no temp file at all.
+- Console output and widgets never appear in the result (FR-010/FR-018); math is
+  converted, not dropped (FR-010a).
+- The not-open warning is always shown before a CLI export; cancelling writes
+  nothing (FR-022).
