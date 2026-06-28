@@ -120,6 +120,8 @@ export const RECONCILE_CONFIRM_TIMEOUT_MS = 3000;
 /** Text encoding used when reading/writing the record file. */
 export const ENCODING_UTF8 = "utf8";
 export const ENV_USERPROFILE = "USERPROFILE";
+/** Name of the search-path environment variable inherited by spawned processes. */
+export const ENV_PATH = "PATH";
 export const DIR_UV_LOCAL = ".local";
 export const DIR_UV_CARGO = ".cargo";
 export const UV_HOMEBREW_ARM_PATH = "/opt/homebrew/bin/uv";

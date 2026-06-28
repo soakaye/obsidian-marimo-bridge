@@ -60,6 +60,7 @@ import {
 	HOST_LOOPBACK,
 	ENCODING_UTF8,
 	ENV_USERPROFILE,
+	ENV_PATH,
 	FILE_PYVENV_CFG,
 	PACKAGE_MANAGER_PIP,
 	PACKAGE_MANAGER_UV,
@@ -313,6 +314,73 @@ export class ServerManager {
 		return candidates;
 	}
 
+	/**
+	 * Directories that should be prepended to a spawned process's `PATH` so that
+	 * marimo's in-UI package installer can find whichever package manager it uses
+	 * (pip, uv, poetry, pixi, rye, …). On macOS, Obsidian (an Electron GUI app)
+	 * launches with a minimal `PATH` that omits the locations where these tools
+	 * live — the vault `.venv`, `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin`,
+	 * etc. — so marimo's own `shutil.which(...)` lookups fail. Rather than gate on
+	 * any single binary, we inject the standard install directories themselves
+	 * (when they exist), which covers every manager marimo supports. The
+	 * configured uv path and the active environment take precedence.
+	 */
+	private packageManagerPathDirs(): string[] {
+		const home = process.env[ENV_USERPROFILE] ?? os.homedir();
+		const isWin = process.platform === PLATFORM_WIN32;
+		const scriptsDir = isWin ? DIR_SCRIPTS_WIN : DIR_SCRIPTS_UNIX;
+
+		const dirs: string[] = [];
+		const add = (dir: string): void => {
+			if (
+				dir &&
+				path.isAbsolute(dir) &&
+				!dirs.includes(dir) &&
+				fs.existsSync(dir)
+			) {
+				dirs.push(dir);
+			}
+		};
+
+		// Explicitly configured uv binary's directory wins.
+		const configuredUv = this.settings.uvPath.trim();
+		if (configuredUv) add(path.dirname(configuredUv));
+
+		// The vault `.venv` bin/Scripts dir and the active interpreter's dir —
+		// where pip (`python -m pip`) and env-local managers live.
+		add(path.join(this.vaultPath, DIR_VENV, scriptsDir));
+		const python = this.resolvePython();
+		if (path.isAbsolute(python)) add(path.dirname(python));
+
+		// Standalone package-manager install locations (uv, poetry, pixi, rye and
+		// pipx-installed tools) that Obsidian's minimal GUI `PATH` omits. `.local`
+		// and `.cargo` use `bin` on every platform; Homebrew is Unix-only.
+		add(path.join(home, DIR_UV_LOCAL, DIR_SCRIPTS_UNIX));
+		add(path.join(home, DIR_UV_CARGO, DIR_SCRIPTS_UNIX));
+		if (!isWin) {
+			add(path.dirname(UV_HOMEBREW_ARM_PATH));
+			add(path.dirname(UV_HOMEBREW_INTEL_PATH));
+		}
+		return dirs;
+	}
+
+	/**
+	 * Clone `process.env` and prepend `extraPathDirs` to `PATH`, skipping
+	 * directories already present. Used when spawning the marimo server so its
+	 * subprocesses (e.g. the package installer's manager call) can locate tools
+	 * that Obsidian's minimal GUI `PATH` would otherwise hide.
+	 */
+	private buildSpawnEnv(extraPathDirs: string[]): NodeJS.ProcessEnv {
+		const env = { ...process.env };
+		if (extraPathDirs.length === 0) return env;
+		const existing = env[ENV_PATH] ?? "";
+		const current = existing ? existing.split(path.delimiter) : [];
+		const additions = extraPathDirs.filter((d) => !current.includes(d));
+		if (additions.length === 0) return env;
+		env[ENV_PATH] = [...additions, ...current].join(path.delimiter);
+		return env;
+	}
+
 	private async validateUvCommand(
 		command: string,
 		source: UvCommandSource
@@ -444,7 +512,7 @@ export class ServerManager {
 				proc = spawn(cmd, args, {
 					cwd: this.vaultPath,
 					windowsHide: true,
-					env: process.env,
+					env: this.buildSpawnEnv(this.packageManagerPathDirs()),
 				});
 			} catch (e) {
 				resolve({
@@ -1063,7 +1131,7 @@ export class ServerManager {
 		const proc = spawn(cmd, args, {
 			cwd: this.vaultPath,
 			windowsHide: true,
-			env: process.env,
+			env: this.buildSpawnEnv(this.packageManagerPathDirs()),
 			detached: !isWin,
 		});
 
