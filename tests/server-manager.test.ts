@@ -95,6 +95,7 @@ function makeSettings(): MarimoBridgeSettings {
 		showMarkdownContextMenu: false,
 		apiToken: "session-token",
 		uvPath: "",
+		enableMarkdownExport: false,
 	};
 }
 

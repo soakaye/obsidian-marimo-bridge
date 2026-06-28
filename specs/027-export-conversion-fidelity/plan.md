@@ -23,6 +23,13 @@ admonitions/details already render as clean, structured HTML that resolves
 f-string values, so they are mapped from the **rendered output**; the
 source-extraction path contemplated in the spec (FR-003) is therefore not needed.
 
+Because the conversion is best-effort and not a faithful reproduction of marimo's
+live rendering, the whole export feature is gated behind an experimental settings
+toggle (`enableMarkdownExport`, OFF by default) under an "Experimental" section of
+the settings tab whose description states this caveat (FR-015). The toggle gates
+the export commands and file-explorer context-menu items in `src/main.ts`; the
+schema/UI live in `src/settings.ts` with literals in `src/constants.ts`.
+
 ## Technical Context
 
 **Language/Version**: TypeScript (ES2020+), bundled with esbuild to `main.js`
@@ -91,7 +98,9 @@ src/
 │                         #   accordion/stack/media/chart conversion + dispatch
 ├── constants.ts          # new tag/attr/class/callout/fence constants + helpers
 ├── editor-view.ts        # live-export: rasterize chart DOM → PNG in webview
-└── notebook-export.ts    # route chart PNG via ImageSink; placeholder fallback
+├── notebook-export.ts    # route chart PNG via ImageSink; placeholder fallback
+├── settings.ts           # experimental "Enable Markdown export" toggle + section
+└── main.ts               # gate export commands / context-menu items on the toggle
 
 tests/
 ├── html-to-markdown.test.ts   # unit tests per new converter

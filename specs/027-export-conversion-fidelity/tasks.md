@@ -147,6 +147,7 @@ actual output shapes (research.md was derived from these captures).
 - [X] T031 Ensure all new literals are externalized: run `npm test` (incl. `tests/constants-policy.test.ts`), `npm run lint`, and `npm run build`; fix any hardcoded-literal or type violations.
 - [X] T032 [P] Update status columns in `specs/026-export-notebook-markdown/conversion-rules.md` (and link from this feature) to reflect the now-implemented constructs.
 - [ ] T033 Run the `specs/027-export-conversion-fidelity/quickstart.md` end-to-end validation (manual smoke in Obsidian per its step 3) and record results.
+- [X] T034 Gate the export feature behind an experimental settings toggle (FR-015): add `enableMarkdownExport` (default `false`) to `MarimoBridgeSettings`/`DEFAULT_SETTINGS` and the `DEFAULT_ENABLE_MARKDOWN_EXPORT` + setting name/desc + `Experimental` header constants in `src/constants.ts`; render an "Experimental" section with the toggle in `src/settings.ts` (description states it does not reproduce marimo's live rendering); gate both export commands and the file-explorer context-menu export items on the toggle in `src/main.ts`; update the test settings fixtures (`tests/notebook-path.test.ts`, `tests/server-manager.test.ts`).
 
 ---
 

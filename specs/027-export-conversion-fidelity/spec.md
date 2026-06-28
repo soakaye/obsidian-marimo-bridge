@@ -31,6 +31,7 @@ admonitions and details are mapped from the already-structured rendered output
 - Q: Default representation for audio/video? → A: Preserve the HTML5 `<audio>`/`<video>` element verbatim; use a link fallback only when the source cannot be resolved.
 - Q: How are pure interactive UI input widgets (slider/text/checkbox/dropdown, test 11) represented? → A: Omitted (dropped); their meaningful values already surface via derived Markdown cells.
 - Q: How are progress bars and spinners (test 13) handled? → A: Out of scope — omitted; transient status has low static value.
+- Q: How is the Markdown export feature surfaced given it is not a faithful reproduction of marimo's live rendering? → A: Gate the whole export feature behind an experimental settings toggle, off by default, grouped under an "Experimental" section whose description states it does not reproduce marimo's display.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -228,6 +229,12 @@ visible placeholder callout.
   from FR-008, which forbids silently dropping only the FR-001–FR-007 constructs.
 - **FR-014**: Transient progress bars and spinners are out of scope and MUST be
   omitted from the export.
+- **FR-015**: The Markdown export feature (its commands and file-explorer
+  context-menu items) MUST be gated behind an experimental settings toggle that is
+  OFF by default. The toggle MUST live under an "Experimental" section of the
+  settings tab whose description states that the export is a best-effort static
+  conversion and does NOT faithfully reproduce marimo's live rendering. While the
+  toggle is OFF, the export commands and context-menu items MUST NOT be exposed.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -279,3 +286,6 @@ visible placeholder callout.
   elements (default desktop Obsidian behavior).
 - External media and external chart assets are referenced, not downloaded into the
   vault, consistent with feature 026's external-image handling.
+- Because the conversion is best-effort and not a faithful reproduction of
+  marimo's live rendering, the feature ships as experimental and OFF by default;
+  users opt in via the "Experimental" settings toggle (FR-015).

@@ -1,8 +1,10 @@
 # Phase 1 Data Model: Conversion fidelity
 
-This feature adds conversion rules to an existing converter; it introduces no
-persisted data. The "model" is the in-memory shapes the converter reads and the
-Markdown constructs it emits.
+This feature adds conversion rules to an existing converter. Its only persisted
+data is one new plugin setting — `enableMarkdownExport: boolean` (default
+`false`), the experimental toggle that gates the export feature (FR-015), stored
+alongside the other `MarimoBridgeSettings` fields. The rest of the "model" is the
+in-memory shapes the converter reads and the Markdown constructs it emits.
 
 ## Input shapes (already defined in `src/marimo-mount-config.ts`)
 

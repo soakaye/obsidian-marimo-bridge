@@ -19,6 +19,7 @@ import {
 	DEFAULT_SHOW_CONTEXT_MENU,
 	DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU,
 	DEFAULT_API_TOKEN,
+	DEFAULT_ENABLE_MARKDOWN_EXPORT,
 	DEFAULT_UV_PATH,
 	SETTINGS_TAB_HEADER,
 	SETTING_MARIMO_PATH_NAME,
@@ -36,6 +37,9 @@ import {
 	SETTING_API_TOKEN_NAME,
 	SETTING_API_TOKEN_DESC,
 	SETTING_API_TOKEN_WARN,
+	SETTING_EXPERIMENTAL_HEADER,
+	SETTING_ENABLE_MARKDOWN_EXPORT_NAME,
+	SETTING_ENABLE_MARKDOWN_EXPORT_DESC,
 	PLACEHOLDER_AUTO_DETECT,
 	TEXT_CHECKING,
 	TEXT_INSTALLING,
@@ -97,6 +101,12 @@ export interface MarimoBridgeSettings {
 	showMarkdownContextMenu: boolean;
 	/** Custom API token for authentication. Empty => auto-generated session token. */
 	apiToken: string;
+	/**
+	 * Experimental: expose the Markdown export commands / context-menu items.
+	 * This is a best-effort static conversion and is NOT intended to reproduce
+	 * marimo's live rendering faithfully. Off by default.
+	 */
+	enableMarkdownExport: boolean;
 }
 
 export const DEFAULT_SETTINGS: MarimoBridgeSettings = {
@@ -112,6 +122,7 @@ export const DEFAULT_SETTINGS: MarimoBridgeSettings = {
 	showContextMenu: DEFAULT_SHOW_CONTEXT_MENU,
 	showMarkdownContextMenu: DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU,
 	apiToken: DEFAULT_API_TOKEN,
+	enableMarkdownExport: DEFAULT_ENABLE_MARKDOWN_EXPORT,
 };
 
 export class MarimoBridgeSettingTab extends PluginSettingTab {
@@ -386,5 +397,24 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 					})();
 				});
 			});
+
+		// Experimental section. Markdown export is a best-effort static
+		// conversion and does NOT faithfully reproduce marimo's live rendering,
+		// so it is grouped here and disabled by default.
+		new Setting(containerEl)
+			.setName(SETTING_EXPERIMENTAL_HEADER)
+			.setHeading();
+
+		new Setting(containerEl)
+			.setName(SETTING_ENABLE_MARKDOWN_EXPORT_NAME)
+			.setDesc(SETTING_ENABLE_MARKDOWN_EXPORT_DESC)
+			.addToggle((t) =>
+				t
+					.setValue(this.plugin.settings.enableMarkdownExport)
+					.onChange(async (value) => {
+						this.plugin.settings.enableMarkdownExport = value;
+						await this.plugin.saveSettings();
+					})
+			);
 	}
 }

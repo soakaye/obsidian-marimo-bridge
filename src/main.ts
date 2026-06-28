@@ -184,11 +184,14 @@ export default class MarimoBridgePlugin extends Plugin {
 		});
 
 		// Export the active `.py` notebook (code + outputs) to a static Markdown
-		// note. Enabled only when a `.py` file is active.
+		// note. Gated behind the experimental "Enable Markdown export" setting;
+		// the conversion is best-effort and does not reproduce marimo's live
+		// rendering. Enabled only when a `.py` file is active.
 		this.addCommand({
 			id: CMD_EXPORT_MARKDOWN_ID,
 			name: CMD_EXPORT_MARKDOWN_NAME,
 			checkCallback: (checking) => {
+				if (!this.settings.enableMarkdownExport) return false;
 				const file = this.app.workspace.getActiveFile();
 				const isPy = file?.extension === RUNTIME_CONSTANTS.EXTENSION_PY;
 				if (checking) return isPy;
@@ -202,6 +205,7 @@ export default class MarimoBridgePlugin extends Plugin {
 			id: CMD_EXPORT_OUTPUTS_MARKDOWN_ID,
 			name: CMD_EXPORT_OUTPUTS_MARKDOWN_NAME,
 			checkCallback: (checking) => {
+				if (!this.settings.enableMarkdownExport) return false;
 				const file = this.app.workspace.getActiveFile();
 				const isPy = file?.extension === RUNTIME_CONSTANTS.EXTENSION_PY;
 				if (checking) return isPy;
@@ -231,7 +235,7 @@ export default class MarimoBridgePlugin extends Plugin {
 								.onClick(() => void this.openMarimo(file.path))
 						);
 					}
-					if (isPy) {
+					if (isPy && this.settings.enableMarkdownExport) {
 						menu.addItem((item) =>
 							item
 								.setTitle(CMD_EXPORT_MARKDOWN_NAME)

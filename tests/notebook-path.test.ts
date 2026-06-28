@@ -46,6 +46,7 @@ function settings(): MarimoBridgeSettings {
 		showMarkdownContextMenu: false,
 		apiToken: "session-token",
 		uvPath: "",
+		enableMarkdownExport: false,
 	};
 }
 

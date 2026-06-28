@@ -39,16 +39,19 @@ New HTML fixtures derived from real captures live under `tests/fixtures/`.
 ## 3. Manual end-to-end in Obsidian (smoke)
 
 1. `npm run dev` and load the plugin in the desktop vault.
-2. Open a `test/` notebook (e.g. `test/01_markdown.py`, `test/03_mermaid.py`,
+2. In the marimo Bridge settings, under the **Experimental** section, enable
+   **"Enable Markdown export"** (OFF by default; FR-015). The export commands and
+   context-menu items are hidden until this is on.
+3. Open a `test/` notebook (e.g. `test/01_markdown.py`, `test/03_mermaid.py`,
    `test/12_layout.py`) in the marimo editor, run it.
-3. Run the command **"Export active marimo notebook to Markdown"**.
-4. Open the produced `.md` next to the notebook and verify in Reading view:
+4. Run the command **"Export active marimo notebook to Markdown"**.
+5. Open the produced `.md` next to the notebook and verify in Reading view:
    - admonitions/details render as callouts (details collapsed),
    - mermaid diagrams render,
    - tabs appear as headings+content, accordion as collapsed callouts,
    - audio/video are playable,
    - charts show an image or a visible placeholder.
-5. Confirm no literal `<marimo-…>` text appears anywhere.
+6. Confirm no literal `<marimo-…>` text appears anywhere.
 
 ## 4. Regenerate reference HTML (optional)
 
