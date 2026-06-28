@@ -6,6 +6,8 @@
 
 **Status**: Draft
 
+**Conversion rules**: [conversion-rules.md](./conversion-rules.md) — per-feature marimo → Obsidian Markdown mapping baseline
+
 **Input**: User description: "Export marimo notebook execution results to a static Obsidian Markdown note. Use `marimo export html` and extract the embedded `__MARIMO_MOUNT_CONFIG__` JSON to obtain code and outputs (no headless browser or external static-HTML conversion tool). Two commands: one including code, one outputs-only. Add the same two operations to the `.py` right-click menu. Convert outputs to Markdown, save images per Obsidian attachment settings, ignore interactive UI widgets. Save next to the original notebook, open the result, clean up temp files."
 
 ## Clarifications

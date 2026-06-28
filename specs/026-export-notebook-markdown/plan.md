@@ -1,6 +1,6 @@
 # Implementation Plan: Export marimo notebook to static Obsidian Markdown
 
-**Branch**: `026-export-notebook-markdown` | **Date**: 2026-06-27 | **Spec**: [spec.md](./spec.md)
+**Branch**: `026-export-notebook-markdown` | **Date**: 2026-06-27 | **Spec**: [spec.md](./spec.md) | **Conversion rules**: [conversion-rules.md](./conversion-rules.md)
 
 **Input**: Feature specification from `/specs/026-export-notebook-markdown/spec.md`
 
