@@ -51,6 +51,30 @@ test("converts a table", () => {
 	assert.match(md, /\| a \| b \|/);
 });
 
+test("renders a marimo-table (DataFrame) from its data-data attribute", () => {
+	// data-data is HTML-entity-encoded, double-JSON-encoded row records.
+	const rows = JSON.stringify([
+		{ Name: "a", Value: 1 },
+		{ Name: "b", Value: 2 },
+	]);
+	const encoded = JSON.stringify(rows)
+		.split("\\")
+		.join("&#92;")
+		.split('"')
+		.join("&quot;");
+	const html =
+		"<marimo-ui-element object-id='t-0'>" +
+		`<marimo-table data-label='null' data-data='${encoded}'></marimo-table>` +
+		"</marimo-ui-element>";
+	const out = renderOutput({ data: { "text/html": html } }, new FakeSink());
+	assert.ok(out, "a displayed DataFrame must not be dropped as a widget");
+	assert.match(out, /\| Name \| Value \|/);
+	assert.match(out, /\| --- \| --- \|/);
+	assert.match(out, /\| a \| 1 \|/);
+	assert.match(out, /\| b \| 2 \|/);
+	assert.doesNotMatch(out, /<marimo-/);
+});
+
 test("routes data-URI images to the sink and keeps external images as links", () => {
 	const sink = new FakeSink();
 	const md = htmlToMarkdown(

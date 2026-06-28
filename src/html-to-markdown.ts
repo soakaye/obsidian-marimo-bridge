@@ -21,6 +21,7 @@ import {
 	OFFSET_ONE,
 	ENT_AMP,
 	ENT_APOS,
+	ENT_BACKSLASH,
 	ENT_GT,
 	ENT_LT,
 	ENT_NBSP,
@@ -53,6 +54,7 @@ import {
 	TEX_INLINE_CLOSE,
 	TEX_INLINE_OPEN,
 	RUNTIME_CONSTANTS,
+	TAG_MARIMO_TABLE,
 	formatHeadingPrefix,
 } from "./constants";
 import type { CellOutput } from "./marimo-mount-config";
@@ -167,6 +169,19 @@ function convertLists(html: string, sink: ImageSink): string {
 		);
 }
 
+/** Render `rows` (first row = header) as a GitHub-flavored Markdown table. */
+function renderTableRows(rows: string[][]): string | null {
+	const header = rows[0];
+	if (!header) return null;
+	const body = rows.slice(OFFSET_ONE);
+	const renderRow = (cells: string[]): string =>
+		MD_TABLE_EDGE + CH_SPACE + cells.join(MD_TABLE_PIPE) + CH_SPACE + MD_TABLE_EDGE;
+	const separator =
+		MD_TABLE_EDGE + header.map(() => MD_TABLE_SEP_CELL).join(MD_TABLE_EDGE) + MD_TABLE_EDGE;
+	const lines = [renderRow(header), separator, ...body.map(renderRow)];
+	return MD_BLANK_LINE + lines.join(CHAR_NEWLINE) + MD_BLANK_LINE;
+}
+
 function convertTables(html: string, sink: ImageSink): string {
 	return html.replace(/<table\b[^>]*>([\s\S]*?)<\/table>/gi, (_m, inner: string) => {
 		const rows: string[][] = [];
@@ -182,15 +197,77 @@ function convertTables(html: string, sink: ImageSink): string {
 			rows.push(cells);
 			return EMPTY;
 		});
-		const header = rows[0];
-		if (!header) return EMPTY;
-		const body = rows.slice(OFFSET_ONE);
-		const renderRow = (cells: string[]): string =>
-			MD_TABLE_EDGE + CH_SPACE + cells.join(MD_TABLE_PIPE) + CH_SPACE + MD_TABLE_EDGE;
-		const separator =
-			MD_TABLE_EDGE + header.map(() => MD_TABLE_SEP_CELL).join(MD_TABLE_EDGE) + MD_TABLE_EDGE;
-		const lines = [renderRow(header), separator, ...body.map(renderRow)];
-		return MD_BLANK_LINE + lines.join(CHAR_NEWLINE) + MD_BLANK_LINE;
+		return renderTableRows(rows) ?? EMPTY;
+	});
+}
+
+/** Decode the HTML-entity-encoded JSON marimo stores in `data-data`. */
+function decodeTableData(raw: string): string {
+	return raw
+		.split(ENT_QUOT)
+		.join(CH_QUOTE)
+		.split(ENT_BACKSLASH)
+		.join(RUNTIME_CONSTANTS.BACKSLASH)
+		.split(ENT_APOS)
+		.join(CH_APOS)
+		.split(ENT_LT)
+		.join(CH_LT)
+		.split(ENT_GT)
+		.join(CH_GT)
+		.split(ENT_AMP)
+		.join(CH_AMP);
+}
+
+/**
+ * Parse `data-data` into row records. marimo double-encodes it as a JSON string
+ * whose contents are themselves JSON, so parse once, and again if the result is
+ * still a string. Returns `null` when the payload is not a row array.
+ */
+function parseTableRows(raw: string): Record<string, unknown>[] | null {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(decodeTableData(raw));
+		if (typeof parsed === RUNTIME_CONSTANTS.TYPE_STRING) {
+			parsed = JSON.parse(parsed as string);
+		}
+	} catch {
+		return null;
+	}
+	if (!Array.isArray(parsed)) return null;
+	return parsed as Record<string, unknown>[];
+}
+
+/** Render one table cell value; collapse newlines so the row stays intact. */
+function cellToText(value: unknown): string {
+	if (value === null || value === undefined) return EMPTY;
+	const text =
+		typeof value === RUNTIME_CONSTANTS.TYPE_STRING
+			? (value as string)
+			: JSON.stringify(value);
+	return text.split(CHAR_NEWLINE).join(CH_SPACE);
+}
+
+/**
+ * Convert marimo's `<marimo-table>` (a displayed DataFrame) to a Markdown table
+ * using the preview rows embedded in its `data-data` attribute. marimo only
+ * embeds the first page of rows, so large frames export truncated.
+ */
+function convertMarimoTables(html: string): string {
+	return html.replace(/<marimo-table\b[^>]*>/gi, (tag) => {
+		const raw = attr(
+			tag,
+			/\bdata-data\s*=\s*"([^"]*)"|\bdata-data\s*=\s*'([^']*)'/i
+		);
+		if (!raw) return EMPTY;
+		const rows = parseTableRows(raw);
+		const first = rows?.[0];
+		if (!first || typeof first !== RUNTIME_CONSTANTS.TYPE_OBJECT) return EMPTY;
+		const headers = Object.keys(first);
+		const matrix = [
+			headers,
+			...rows.map((row) => headers.map((key) => cellToText(row[key]))),
+		];
+		return renderTableRows(matrix) ?? EMPTY;
 	});
 }
 
@@ -226,7 +303,8 @@ function collapseBlankLines(text: string): string {
 
 /** Convert a marimo-rendered HTML fragment to Markdown. */
 export function htmlToMarkdown(html: string, sink: ImageSink): string {
-	let s = convertTables(html, sink);
+	let s = convertMarimoTables(html);
+	s = convertTables(s, sink);
 	s = convertLists(s, sink);
 	s = convertHeadings(s, sink);
 	s = convertPre(s, sink);
@@ -256,6 +334,14 @@ function containsWidget(record: Record<string, string>): boolean {
 	return Object.values(record).some((v) => v.includes(TAG_MARIMO_UI_ELEMENT));
 }
 
+/** The payload carrying a renderable `<marimo-table>`, or `null` if none. */
+function tableSource(record: Record<string, string>): string | null {
+	for (const value of Object.values(record)) {
+		if (value.includes(TAG_MARIMO_TABLE)) return value;
+	}
+	return null;
+}
+
 /**
  * Render one cell output to Markdown, or `null` when it should be omitted
  * (interactive widgets, console-only/empty, or unsupported payloads).
@@ -268,6 +354,13 @@ export function renderOutput(output: CellOutput, sink: ImageSink): string | null
 			return t.length === 0 ? null : t;
 		}
 		return null;
+	}
+	// A displayed DataFrame is wrapped in a `marimo-ui-element` but carries
+	// static rows; render it instead of dropping it as an interactive widget.
+	const table = tableSource(record);
+	if (table !== null) {
+		const md = htmlToMarkdown(table, sink);
+		return md.length === 0 ? null : md;
 	}
 	if (containsWidget(record)) return null;
 

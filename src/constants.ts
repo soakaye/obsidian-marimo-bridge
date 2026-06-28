@@ -375,6 +375,13 @@ export const IMAGE_TOKEN_CLOSE = "@@";
 /** Wrapper element marimo emits for interactive UI widgets (`mo.ui.*`). */
 export const TAG_MARIMO_UI_ELEMENT = "<marimo-ui-element";
 
+/**
+ * Table widget marimo emits for a displayed DataFrame. Although wrapped in a
+ * `marimo-ui-element`, it carries the (preview) rows statically in its
+ * `data-data` attribute, so the export renders them rather than dropping it.
+ */
+export const TAG_MARIMO_TABLE = "<marimo-table";
+
 /** marimo wraps rendered LaTeX in this non-interactive element. */
 export const TEX_INLINE_OPEN = "||(";
 export const TEX_INLINE_CLOSE = "||)";
@@ -418,6 +425,8 @@ export const ENT_GT = "&gt;";
 export const ENT_QUOT = "&quot;";
 export const ENT_APOS = "&#39;";
 export const ENT_NBSP = "&nbsp;";
+/** Numeric entity for a backslash; marimo uses it in `data-data` JSON. */
+export const ENT_BACKSLASH = "&#92;";
 
 // Template & SVG
 export const NEW_NOTEBOOK_TEMPLATE = `import marimo
