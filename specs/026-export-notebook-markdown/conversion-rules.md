@@ -43,6 +43,15 @@ converter (see "Known limitations").
 
 Legend: ✅ implemented · ⚠️ partial · ❌ not handled (dropped/flattened)
 
+> **Implementation status update (feature 027 —
+> [027-export-conversion-fidelity](../027-export-conversion-fidelity/spec.md)):**
+> The previously ❌ rows are now implemented and tested: admonitions & details →
+> Obsidian callouts, mermaid → ` ```mermaid ` fences, tabs → headings, accordion →
+> collapsed callouts, hstack/vstack → sequential blocks, audio/video → preserved
+> HTML5 elements. Interactive charts (Altair/Plotly) emit a placeholder callout
+> (the guaranteed floor); live-session static-image rasterization is the remaining
+> follow-up. Pure UI inputs and progress/spinner remain intentionally omitted.
+
 ---
 
 ## Export source: HTML vs ipynb (decision)

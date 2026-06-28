@@ -254,3 +254,47 @@ test("successful export removes the temporary html", async () => {
 	assert.ok(h.lastOutHtml);
 	assert.equal(existsSync(h.lastOutHtml), false, "temp html removed");
 });
+
+// Feature 027: exported markdown converts the new constructs and never leaks
+// raw `<marimo-*>` custom-element markup (SC-006, FR-010), validated against
+// real `marimo export html` captures.
+
+test("fidelity: layout export yields tabs/accordion callouts and no marimo markup", async () => {
+	resetNoticeMessages();
+	const h = makeHarness({ fixture: "export-layout.html" });
+	await exportNotebookToMarkdown(h.plugin, "nb.py", false);
+	const md = h.created.get("nb.md");
+	assert.ok(md);
+	assert.match(md, /^#### Overview$/m);
+	assert.match(md, /^> \[!note\]- Section 1$/m);
+	assert.doesNotMatch(md, /<marimo-/);
+});
+
+test("fidelity: admonitions/details and mermaid export cleanly", async () => {
+	resetNoticeMessages();
+	const a = makeHarness({ fixture: "export-admonitions.html" });
+	await exportNotebookToMarkdown(a.plugin, "nb.py", false);
+	const amd = a.created.get("nb.md");
+	assert.ok(amd);
+	assert.match(amd, /> \[!warning\] Warning/);
+	assert.match(amd, /> \[!note\]- Click to expand/);
+	assert.doesNotMatch(amd, /<marimo-/);
+
+	const m = makeHarness({ fixture: "export-mermaid.html" });
+	await exportNotebookToMarkdown(m.plugin, "nb.py", false);
+	const mmd = m.created.get("nb.md");
+	assert.ok(mmd);
+	assert.match(mmd, /```mermaid/);
+	assert.doesNotMatch(mmd, /<marimo-/);
+});
+
+test("fidelity: media export preserves audio/video and never leaks markup", async () => {
+	resetNoticeMessages();
+	const h = makeHarness({ fixture: "export-media.html" });
+	await exportNotebookToMarkdown(h.plugin, "nb.py", false);
+	const md = h.created.get("nb.md");
+	assert.ok(md);
+	assert.match(md, /<audio /);
+	assert.match(md, /<video /);
+	assert.doesNotMatch(md, /<marimo-/);
+});

@@ -382,6 +382,15 @@ export const TAG_MARIMO_UI_ELEMENT = "<marimo-ui-element";
  */
 export const TAG_MARIMO_TABLE = "<marimo-table";
 
+/** marimo custom elements recognized for feature-027 conversion rules. */
+export const TAG_MARIMO_MERMAID = "<marimo-mermaid";
+export const TAG_MARIMO_TABS = "<marimo-tabs";
+export const TAG_MARIMO_ACCORDION = "<marimo-accordion";
+export const TAG_MARIMO_VEGA = "<marimo-vega";
+export const TAG_MARIMO_PLOTLY = "<marimo-plotly";
+/** Class marimo gives rendered admonition blocks (`<div class="admonition T">`). */
+export const CLASS_ADMONITION = "admonition";
+
 /** marimo wraps rendered LaTeX in this non-interactive element. */
 export const TEX_INLINE_OPEN = "||(";
 export const TEX_INLINE_CLOSE = "||)";
@@ -410,6 +419,21 @@ export const MD_TABLE_PIPE = " | ";
 export const MD_TABLE_EDGE = "|";
 export const MD_TABLE_SEP_CELL = " --- ";
 export const MD_BLANK_LINE = "\n\n";
+
+// Feature 027: callout / quote / mermaid / chart / media emit tokens
+export const MD_CALLOUT_PREFIX = "> [!";
+export const MD_CALLOUT_CLOSE = "]";
+export const MD_CALLOUT_COLLAPSE = "-";
+export const MD_QUOTE_PREFIX = "> ";
+export const MD_LANG_MERMAID = "mermaid";
+export const CALLOUT_TYPE_NOTE = "note";
+export const CHART_PLACEHOLDER_OPEN = "Interactive chart (";
+export const CHART_PLACEHOLDER_CLOSE = ") — not exported";
+export const MEDIA_TOKEN_OPEN = "@@marimo-media-";
+export const CHART_KIND_ALTAIR = "Altair";
+export const CHART_KIND_PLOTLY = "Plotly";
+/** Heading level used for an unwrapped tab's label. */
+export const HEADING_LEVEL_TAB = 4;
 
 // Warning modal shown when exporting a notebook that is not open in a marimo
 // editor (no live session → CLI fallback uses initial widget values).
@@ -701,6 +725,37 @@ export function formatExportParseFailure(notebookName: string): string {
 /** Heading prefix of `level` hashes followed by a space. */
 export function formatHeadingPrefix(level: number): string {
 	return `${CHAR_HASH.repeat(level)}${CH_SPACE}`;
+}
+
+/** Obsidian callout header: `> [!type] Title`, or `> [!type]- Title` when collapsed. */
+export function formatCallout(type: string, title: string, collapsed: boolean): string {
+	return (
+		MD_CALLOUT_PREFIX +
+		type +
+		MD_CALLOUT_CLOSE +
+		(collapsed ? MD_CALLOUT_COLLAPSE : "") +
+		CH_SPACE +
+		title
+	);
+}
+
+/** A fenced ` ```mermaid ` block carrying a diagram's source. */
+export function formatMermaidBlock(source: string): string {
+	return MD_FENCE + MD_LANG_MERMAID + CHAR_NEWLINE + source + CHAR_NEWLINE + MD_FENCE;
+}
+
+/** Placeholder callout standing in for an un-rasterized interactive chart. */
+export function formatChartPlaceholder(kind: string): string {
+	return formatCallout(
+		CALLOUT_TYPE_NOTE,
+		CHART_PLACEHOLDER_OPEN + kind + CHART_PLACEHOLDER_CLOSE,
+		false
+	);
+}
+
+/** Sentinel that protects a media element from the tag-stripping passes. */
+export function formatMediaToken(index: number): string {
+	return MEDIA_TOKEN_OPEN + index.toString() + IMAGE_TOKEN_CLOSE;
 }
 
 /** Collision-avoiding base name: `base-1`, `base-2`, … */

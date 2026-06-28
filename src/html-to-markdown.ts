@@ -46,6 +46,7 @@ import {
 	MIME_PNG,
 	MD_MATH_BLOCK,
 	MD_MATH_INLINE,
+	MD_QUOTE_PREFIX,
 	REGEX_GROUP_FIRST,
 	REGEX_GROUP_SECOND,
 	TAG_MARIMO_UI_ELEMENT,
@@ -55,7 +56,19 @@ import {
 	TEX_INLINE_OPEN,
 	RUNTIME_CONSTANTS,
 	TAG_MARIMO_TABLE,
+	TAG_MARIMO_TABS,
+	TAG_MARIMO_ACCORDION,
+	TAG_MARIMO_VEGA,
+	TAG_MARIMO_PLOTLY,
+	CALLOUT_TYPE_NOTE,
+	CHART_KIND_ALTAIR,
+	CHART_KIND_PLOTLY,
+	HEADING_LEVEL_TAB,
 	formatHeadingPrefix,
+	formatCallout,
+	formatMermaidBlock,
+	formatChartPlaceholder,
+	formatMediaToken,
 } from "./constants";
 import type { CellOutput } from "./marimo-mount-config";
 
@@ -271,6 +284,186 @@ function convertMarimoTables(html: string): string {
 	});
 }
 
+/** Parse an entity-encoded JSON string attribute (e.g. mermaid `data-diagram`). */
+function parseEncodedString(raw: string): string | null {
+	try {
+		const parsed: unknown = JSON.parse(decodeTableData(raw));
+		return typeof parsed === RUNTIME_CONSTANTS.TYPE_STRING ? (parsed as string) : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Parse an entity-encoded JSON array attribute (e.g. tab/accordion labels). */
+function parseEncodedArray(raw: string): string[] | null {
+	try {
+		const parsed: unknown = JSON.parse(decodeTableData(raw));
+		return Array.isArray(parsed) ? (parsed as string[]) : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Quote every line of a Markdown block as a callout body (`> ` prefix). */
+function quoteBlock(markdown: string): string {
+	return markdown
+		.split(CHAR_NEWLINE)
+		.map((line) => MD_QUOTE_PREFIX + line)
+		.join(CHAR_NEWLINE);
+}
+
+/** Plain-text label from `labels[index]` (each label is an HTML fragment). */
+function labelText(labels: string[] | null, index: number): string {
+	const raw = labels?.[index];
+	if (raw === undefined) return EMPTY;
+	return decodeEntities(stripTags(raw)).trim();
+}
+
+/** The admonition type (note/tip/warning/danger) from a `class` attribute. */
+function admonitionType(cls: string): string {
+	const m = /admonition\s+([a-z]+)/i.exec(cls);
+	return m ? m[REGEX_GROUP_FIRST] ?? CALLOUT_TYPE_NOTE : CALLOUT_TYPE_NOTE;
+}
+
+/** Convert marimo `<div class="admonition T">` blocks to Obsidian callouts. */
+function convertAdmonitions(html: string, sink: ImageSink): string {
+	return html.replace(
+		/<div\b[^>]*class\s*=\s*("admonition[^"]*"|'admonition[^']*')[^>]*>([\s\S]*?)<\/div>/gi,
+		(_m, cls: string, inner: string) => {
+			const type = admonitionType(cls);
+			const titleMatch =
+				/<span\b[^>]*admonition-title[^>]*>([\s\S]*?)<\/span>/i.exec(inner);
+			const title = titleMatch
+				? decodeEntities(stripTags(titleMatch[REGEX_GROUP_FIRST] ?? EMPTY)).trim()
+				: EMPTY;
+			const body = inner.replace(
+				/<span\b[^>]*admonition-title[^>]*>[\s\S]*?<\/span>/i,
+				() => EMPTY
+			);
+			const md = htmlToMarkdown(body, sink);
+			return (
+				MD_BLANK_LINE +
+				formatCallout(type, title, false) +
+				CHAR_NEWLINE +
+				quoteBlock(md) +
+				MD_BLANK_LINE
+			);
+		}
+	);
+}
+
+/** Convert `<details><summary>T</summary>…` to a collapsed Obsidian callout. */
+function convertDetails(html: string, sink: ImageSink): string {
+	return html.replace(
+		/<details\b[^>]*>([\s\S]*?)<\/details>/gi,
+		(_m, inner: string) => {
+			const sm = /<summary\b[^>]*>([\s\S]*?)<\/summary>/i.exec(inner);
+			const title = sm
+				? decodeEntities(stripTags(sm[REGEX_GROUP_FIRST] ?? EMPTY)).trim()
+				: EMPTY;
+			const body = inner.replace(
+				/<summary\b[^>]*>[\s\S]*?<\/summary>/i,
+				() => EMPTY
+			);
+			const md = htmlToMarkdown(body, sink);
+			return (
+				MD_BLANK_LINE +
+				formatCallout(CALLOUT_TYPE_NOTE, title, true) +
+				CHAR_NEWLINE +
+				quoteBlock(md) +
+				MD_BLANK_LINE
+			);
+		}
+	);
+}
+
+/** Convert `<marimo-mermaid data-diagram>` to a native ` ```mermaid ` fence. */
+function convertMermaid(html: string): string {
+	return html.replace(
+		/<marimo-mermaid\b[^>]*>(?:[\s\S]*?<\/marimo-mermaid>)?/gi,
+		(tag) => {
+			const raw = attr(
+				tag,
+				/\bdata-diagram\s*=\s*"([^"]*)"|\bdata-diagram\s*=\s*'([^']*)'/i
+			);
+			if (!raw) return EMPTY;
+			const src = parseEncodedString(raw);
+			if (src === null) return EMPTY;
+			return MD_BLANK_LINE + formatMermaidBlock(src.trim()) + MD_BLANK_LINE;
+		}
+	);
+}
+
+/** Unwrap `<marimo-tabs>` into a heading + content per tab. */
+function convertTabs(html: string, sink: ImageSink): string {
+	return html.replace(
+		/<marimo-tabs\b[^>]*>([\s\S]*?)<\/marimo-tabs>/gi,
+		(tag, inner: string) => {
+			const labelsRaw = attr(
+				tag,
+				/\bdata-tabs\s*=\s*"([^"]*)"|\bdata-tabs\s*=\s*'([^']*)'/i
+			);
+			const labels = labelsRaw ? parseEncodedArray(labelsRaw) : null;
+			const panels: string[] = [];
+			let index = 0;
+			inner.replace(
+				/<div\b[^>]*\bdata-kind\s*=\s*["']tab["'][^>]*>([\s\S]*?)<\/div>/gi,
+				(_m, body: string) => {
+					const label = labelText(labels, index);
+					const content = htmlToMarkdown(body, sink);
+					panels.push(
+						formatHeadingPrefix(HEADING_LEVEL_TAB) + label + MD_BLANK_LINE + content
+					);
+					index++;
+					return EMPTY;
+				}
+			);
+			return MD_BLANK_LINE + panels.join(MD_BLANK_LINE) + MD_BLANK_LINE;
+		}
+	);
+}
+
+/** Convert `<marimo-accordion>` sections to collapsed callouts. */
+function convertAccordion(html: string, sink: ImageSink): string {
+	return html.replace(
+		/<marimo-accordion\b[^>]*>([\s\S]*?)<\/marimo-accordion>/gi,
+		(tag, inner: string) => {
+			const labelsRaw = attr(
+				tag,
+				/\bdata-labels\s*=\s*"([^"]*)"|\bdata-labels\s*=\s*'([^']*)'/i
+			);
+			const labels = labelsRaw ? parseEncodedArray(labelsRaw) : null;
+			const sections: string[] = [];
+			let index = 0;
+			inner.replace(/<div\b[^>]*>([\s\S]*?)<\/div>/gi, (_m, body: string) => {
+				const label = labelText(labels, index);
+				const content = htmlToMarkdown(body, sink);
+				sections.push(
+					formatCallout(CALLOUT_TYPE_NOTE, label, true) +
+						CHAR_NEWLINE +
+						quoteBlock(content)
+				);
+				index++;
+				return EMPTY;
+			});
+			return MD_BLANK_LINE + sections.join(MD_BLANK_LINE) + MD_BLANK_LINE;
+		}
+	);
+}
+
+/**
+ * Replace `<audio>`/`<video>` elements with sentinels and stash them verbatim,
+ * so the later tag-stripping passes leave the playable HTML intact. The caller
+ * restores them after conversion.
+ */
+function protectMedia(html: string, store: string[]): string {
+	return html.replace(/<(audio|video)\b[\s\S]*?<\/\1>/gi, (element) => {
+		const token = formatMediaToken(store.length);
+		store.push(element);
+		return token;
+	});
+}
+
 function convertHeadings(html: string, sink: ImageSink): string {
 	return html.replace(
 		/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi,
@@ -303,14 +496,27 @@ function collapseBlankLines(text: string): string {
 
 /** Convert a marimo-rendered HTML fragment to Markdown. */
 export function htmlToMarkdown(html: string, sink: ImageSink): string {
+	const media: string[] = [];
 	let s = convertMarimoTables(html);
+	s = convertAdmonitions(s, sink);
+	s = convertDetails(s, sink);
+	s = convertMermaid(s);
+	s = convertTabs(s, sink);
+	s = convertAccordion(s, sink);
+	s = protectMedia(s, media);
 	s = convertTables(s, sink);
 	s = convertLists(s, sink);
 	s = convertHeadings(s, sink);
 	s = convertPre(s, sink);
 	s = convertParagraphs(s, sink);
 	s = convertInline(s, sink);
-	return collapseBlankLines(s).trim();
+	s = collapseBlankLines(s).trim();
+	for (let i = 0; i < media.length; i++) {
+		const element = media[i];
+		if (element === undefined) continue;
+		s = s.split(formatMediaToken(i)).join(element);
+	}
+	return s;
 }
 
 /** True when any output carries a `text/markdown` payload (a Markdown cell). */
@@ -343,6 +549,28 @@ function tableSource(record: Record<string, string>): string | null {
 }
 
 /**
+ * The payload carrying a layout container (`<marimo-tabs>`/`<marimo-accordion>`)
+ * whose static content must be rendered even when wrapped as a widget.
+ */
+function containerSource(record: Record<string, string>): string | null {
+	for (const value of Object.values(record)) {
+		if (value.includes(TAG_MARIMO_TABS) || value.includes(TAG_MARIMO_ACCORDION)) {
+			return value;
+		}
+	}
+	return null;
+}
+
+/** The interactive-chart kind in this output, or `null` if none. */
+function chartKind(record: Record<string, string>): string | null {
+	for (const value of Object.values(record)) {
+		if (value.includes(TAG_MARIMO_VEGA)) return CHART_KIND_ALTAIR;
+		if (value.includes(TAG_MARIMO_PLOTLY)) return CHART_KIND_PLOTLY;
+	}
+	return null;
+}
+
+/**
  * Render one cell output to Markdown, or `null` when it should be omitted
  * (interactive widgets, console-only/empty, or unsupported payloads).
  */
@@ -362,6 +590,17 @@ export function renderOutput(output: CellOutput, sink: ImageSink): string | null
 		const md = htmlToMarkdown(table, sink);
 		return md.length === 0 ? null : md;
 	}
+	// Layout containers are wrapped as widgets but carry static content: render
+	// them instead of dropping them with the interactive wrapper.
+	const container = containerSource(record);
+	if (container !== null) {
+		const md = htmlToMarkdown(container, sink);
+		return md.length === 0 ? null : md;
+	}
+	// Interactive charts have no static equivalent here; emit a visible
+	// placeholder so the chart is never silently dropped.
+	const chart = chartKind(record);
+	if (chart !== null) return formatChartPlaceholder(chart);
 	if (containsWidget(record)) return null;
 
 	if (record[MIME_MARKDOWN] !== undefined) {

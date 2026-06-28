@@ -165,3 +165,124 @@ test("renderOutput returns null for empty text and unsupported payloads", () => 
 		null
 	);
 });
+
+// --- Feature 027: conversion fidelity ---
+
+// Mirror marimo's entity-encoded JSON attribute encoding (see marimo-table test).
+function encodeAttr(value: unknown): string {
+	return JSON.stringify(value).split("\\").join("&#92;").split('"').join("&quot;");
+}
+
+test("US1: converts all admonition types to Obsidian callouts", () => {
+	const html =
+		'<span class="markdown">' +
+		'<div class="admonition note"><span class="admonition-title">Note</span><span class="paragraph">a note.</span></div>' +
+		'<div class="admonition tip"><span class="admonition-title">Tip</span><span class="paragraph">a tip.</span></div>' +
+		'<div class="admonition warning"><span class="admonition-title">Warning</span><span class="paragraph">a warning.</span></div>' +
+		'<div class="admonition danger"><span class="admonition-title">Danger</span><span class="paragraph">a danger.</span></div>' +
+		"</span>";
+	const md = htmlToMarkdown(html, new FakeSink());
+	assert.match(md, /^> \[!note\] Note$/m);
+	assert.match(md, /^> a note\.$/m);
+	assert.match(md, /> \[!tip\] Tip/);
+	assert.match(md, /> \[!warning\] Warning/);
+	assert.match(md, /> \[!danger\] Danger/);
+	assert.doesNotMatch(md, /admonition/);
+});
+
+test("US1: converts details to a collapsed callout, preserving interpolated text", () => {
+	const html =
+		"<details><summary>Click to expand</summary>" +
+		'<span class="paragraph">value is 42.</span></details>';
+	const md = htmlToMarkdown(html, new FakeSink());
+	assert.match(md, /^> \[!note\]- Click to expand$/m);
+	assert.match(md, /^> value is 42\./m);
+	assert.doesNotMatch(md, /<details|<summary/);
+});
+
+test("US2: converts marimo-mermaid to a mermaid fence with the diagram source", () => {
+	const diagram = "graph LR\n  A[Edit] --> B[Run]";
+	const html = `<marimo-mermaid data-diagram='${encodeAttr(diagram)}'></marimo-mermaid>`;
+	const md = htmlToMarkdown(html, new FakeSink());
+	assert.match(md, /```mermaid/);
+	assert.match(md, /graph LR/);
+	assert.match(md, /A\[Edit\] --> B\[Run\]/);
+	assert.doesNotMatch(md, /<marimo-/);
+});
+
+test("US3: unwraps marimo-tabs into a heading + content per tab", () => {
+	const labels = [
+		'<span class="paragraph">Overview</span>',
+		'<span class="paragraph">Details</span>',
+	];
+	const html =
+		"<marimo-ui-element object-id='x'>" +
+		`<marimo-tabs data-tabs='${encodeAttr(labels)}'>` +
+		"<div data-kind='tab'><span class=\"paragraph\">First panel.</span></div>" +
+		"<div data-kind='tab'><span class=\"paragraph\">Second panel.</span></div>" +
+		"</marimo-tabs></marimo-ui-element>";
+	const out = renderOutput({ data: { "text/html": html } }, new FakeSink());
+	assert.ok(out, "tabs must not be dropped as a widget");
+	assert.match(out, /^#### Overview$/m);
+	assert.match(out, /First panel\./);
+	assert.match(out, /^#### Details$/m);
+	assert.match(out, /Second panel\./);
+	assert.doesNotMatch(out, /<marimo-/);
+});
+
+test("US3: converts marimo-accordion sections to collapsed callouts", () => {
+	const labels = [
+		'<span class="paragraph">Section 1</span>',
+		'<span class="paragraph">Section 2</span>',
+	];
+	const html =
+		`<marimo-accordion data-labels='${encodeAttr(labels)}' data-multiple='false'>` +
+		'<div><span class="paragraph">First section.</span></div>' +
+		'<div><span class="paragraph">Second section.</span></div>' +
+		"</marimo-accordion>";
+	const out = renderOutput({ data: { "text/html": html } }, new FakeSink());
+	assert.ok(out, "accordion must not be dropped");
+	assert.match(out, /^> \[!note\]- Section 1$/m);
+	assert.match(out, /^> First section\./m);
+	assert.match(out, /^> \[!note\]- Section 2$/m);
+	assert.doesNotMatch(out, /<marimo-/);
+});
+
+test("US4: preserves audio and video as HTML5 elements", () => {
+	const html =
+		"<audio src='https://example.com/a.ogg' controls></audio>" +
+		"<video src='https://example.com/v.webm' controls></video>";
+	const md = htmlToMarkdown(html, new FakeSink());
+	assert.match(md, /<audio src='https:\/\/example\.com\/a\.ogg' controls><\/audio>/);
+	assert.match(md, /<video src='https:\/\/example\.com\/v\.webm' controls><\/video>/);
+});
+
+test("US5: emits a placeholder for interactive Altair and Plotly charts", () => {
+	const altair = renderOutput(
+		{ data: { "text/html": "<marimo-ui-element><marimo-vega object-id='v'></marimo-vega></marimo-ui-element>" } },
+		new FakeSink()
+	);
+	assert.ok(altair);
+	assert.match(altair, /Interactive chart \(Altair\)/);
+	assert.doesNotMatch(altair, /<marimo-/);
+	const plotly = renderOutput(
+		{ data: { "text/html": "<marimo-ui-element><marimo-plotly object-id='p'></marimo-plotly></marimo-ui-element>" } },
+		new FakeSink()
+	);
+	assert.ok(plotly);
+	assert.match(plotly, /Interactive chart \(Plotly\)/);
+});
+
+test("FR-013/FR-014: pure UI inputs and progress/spinner are omitted without leaking", () => {
+	const slider = renderOutput(
+		{ data: { "text/html": "<marimo-ui-element><marimo-slider object-id='s'></marimo-slider></marimo-ui-element>" } },
+		new FakeSink()
+	);
+	assert.equal(slider, null);
+	// A transient progress element must never leak raw custom-element markup.
+	const progress = htmlToMarkdown(
+		"<marimo-progress title='Working'></marimo-progress>",
+		new FakeSink()
+	);
+	assert.doesNotMatch(progress, /<marimo-/);
+});
