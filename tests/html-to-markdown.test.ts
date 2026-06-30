@@ -273,6 +273,49 @@ test("US5: emits a placeholder for interactive Altair and Plotly charts", () => 
 	assert.match(plotly, /Interactive chart \(Plotly\)/);
 });
 
+test("US1: embeds a rasterized image when the chart object-id is in the charts map", () => {
+	const altairPng = "data:image/png;base64,AAA";
+	const altairSink = new FakeSink();
+	const altair = renderOutput(
+		{ data: { "text/html": "<marimo-ui-element><marimo-vega object-id='v'></marimo-vega></marimo-ui-element>" } },
+		altairSink,
+		{ v: altairPng }
+	);
+	assert.equal(altair, "__IMG_0__");
+	assert.deepEqual(altairSink.uris, [altairPng]);
+
+	const plotlyPng = "data:image/png;base64,BBB";
+	const plotlySink = new FakeSink();
+	const plotly = renderOutput(
+		{ data: { "text/html": "<marimo-ui-element><marimo-plotly object-id='p'></marimo-plotly></marimo-ui-element>" } },
+		plotlySink,
+		{ p: plotlyPng }
+	);
+	assert.equal(plotly, "__IMG_0__");
+	assert.deepEqual(plotlySink.uris, [plotlyPng]);
+});
+
+test("US2: falls back to the placeholder when no chart image matches the object-id", () => {
+	// Non-matching key → placeholder, never another chart's image (no positional match).
+	const mismatch = renderOutput(
+		{ data: { "text/html": "<marimo-ui-element><marimo-vega object-id='v'></marimo-vega></marimo-ui-element>" } },
+		new FakeSink(),
+		{ "other-id": "data:image/png;base64,AAA" }
+	);
+	assert.ok(mismatch);
+	assert.match(mismatch, /Interactive chart \(Altair\)/);
+	assert.doesNotMatch(mismatch, /__IMG_/);
+
+	// Empty map (e.g. CLI-fallback export) → placeholder, matching default behavior.
+	const empty = renderOutput(
+		{ data: { "text/html": "<marimo-ui-element><marimo-plotly object-id='p'></marimo-plotly></marimo-ui-element>" } },
+		new FakeSink(),
+		{}
+	);
+	assert.ok(empty);
+	assert.match(empty, /Interactive chart \(Plotly\)/);
+});
+
 test("FR-013/FR-014: pure UI inputs and progress/spinner are omitted without leaking", () => {
 	const slider = renderOutput(
 		{ data: { "text/html": "<marimo-ui-element><marimo-slider object-id='s'></marimo-slider></marimo-ui-element>" } },

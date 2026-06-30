@@ -786,8 +786,11 @@ export function formatImageToken(index: number): string {
 /**
  * Script run inside the marimo `<webview>` to export the LIVE session as HTML
  * via `POST /api/export/html`, reusing the headers captured by the injection
- * script. Resolves to the HTML string, or `null` when no live session/headers
- * are available (caller then falls back to the CLI export).
+ * script. In addition to the HTML, it rasterizes any rendered interactive charts
+ * (Altair/Vega, Plotly) in the live editor DOM to PNG data URIs, keyed by their
+ * `object-id`, so the converter can embed a static image instead of a
+ * placeholder. Resolves to `{ html, charts }`, or `null` when no live
+ * session/headers are available (caller then falls back to the CLI export).
  */
 export function formatLiveExportScript(includeCode: boolean): string {
 	return `(async function () {
@@ -809,7 +812,65 @@ export function formatLiveExportScript(includeCode: boolean): string {
 			})
 		});
 		if (!res.ok) return null;
-		return await res.text();
+		var html = await res.text();
+		var charts = {};
+		function q(el, sel) {
+			return el.querySelector(sel) ||
+				(el.shadowRoot ? el.shadowRoot.querySelector(sel) : null);
+		}
+		function svgToPng(svg) {
+			return new Promise(function (resolve) {
+				try {
+					var xml = new XMLSerializer().serializeToString(svg);
+					var rect = svg.getBoundingClientRect();
+					var ratio = window.devicePixelRatio || 1;
+					var img = new Image();
+					img.onload = function () {
+						try {
+							var w = rect.width || svg.clientWidth || 600;
+							var h = rect.height || svg.clientHeight || 400;
+							var canvas = document.createElement("canvas");
+							canvas.width = w * ratio;
+							canvas.height = h * ratio;
+							canvas.getContext("2d").drawImage(
+								img, 0, 0, canvas.width, canvas.height
+							);
+							resolve(canvas.toDataURL("image/png"));
+						} catch (e) { resolve(null); }
+					};
+					img.onerror = function () { resolve(null); };
+					img.src = "data:image/svg+xml;charset=utf-8," +
+						encodeURIComponent(xml);
+				} catch (e) { resolve(null); }
+			});
+		}
+		var tasks = [];
+		function record(id, value) {
+			tasks.push(Promise.resolve(value).then(function (uri) {
+				if (id && uri) charts[id] = uri;
+			}).catch(function () {}));
+		}
+		document.querySelectorAll("marimo-vega[object-id]").forEach(function (el) {
+			var id = el.getAttribute("object-id");
+			var canvas = q(el, "canvas");
+			if (canvas) { try { record(id, canvas.toDataURL("image/png")); } catch (e) {} return; }
+			var svg = q(el, "svg");
+			if (svg) record(id, svgToPng(svg));
+		});
+		document.querySelectorAll("marimo-plotly[object-id]").forEach(function (el) {
+			var id = el.getAttribute("object-id");
+			var plot = q(el, ".js-plotly-plot") || q(el, "[class*='plotly']");
+			if (plot && window.Plotly && window.Plotly.toImage) {
+				record(id, window.Plotly.toImage(plot, { format: "png" }));
+				return;
+			}
+			var canvas = q(el, "canvas");
+			if (canvas) { try { record(id, canvas.toDataURL("image/png")); } catch (e) {} return; }
+			var svg = q(el, "svg");
+			if (svg) record(id, svgToPng(svg));
+		});
+		await Promise.all(tasks);
+		return { html: html, charts: charts };
 	} catch (e) {
 		return null;
 	}

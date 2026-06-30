@@ -18,6 +18,7 @@ import {
 	CH_SPACE,
 	CHAR_NEWLINE,
 	DATA_URI_PREFIX,
+	INDEX_NOT_FOUND,
 	OFFSET_ONE,
 	ENT_AMP,
 	ENT_APOS,
@@ -561,11 +562,35 @@ function containerSource(record: Record<string, string>): string | null {
 	return null;
 }
 
-/** The interactive-chart kind in this output, or `null` if none. */
-function chartKind(record: Record<string, string>): string | null {
+/** An interactive-chart output: its kind plus the `object-id` used to match a
+ * rasterized image (or `null` when the id cannot be read). */
+interface ChartInfo {
+	kind: string;
+	objectId: string | null;
+}
+
+/** The `object-id` of the first `tag` element inside `value`, or `null`. */
+function chartObjectId(value: string, tag: string): string | null {
+	const start = value.indexOf(tag);
+	if (start === INDEX_NOT_FOUND) return null;
+	const end = value.indexOf(CH_GT, start);
+	const opening =
+		end === INDEX_NOT_FOUND ? value.slice(start) : value.slice(start, end + OFFSET_ONE);
+	return attr(
+		opening,
+		/\bobject-id\s*=\s*"([^"]*)"|\bobject-id\s*=\s*'([^']*)'/i
+	);
+}
+
+/** The interactive chart in this output (kind + object-id), or `null` if none. */
+function chartInfo(record: Record<string, string>): ChartInfo | null {
 	for (const value of Object.values(record)) {
-		if (value.includes(TAG_MARIMO_VEGA)) return CHART_KIND_ALTAIR;
-		if (value.includes(TAG_MARIMO_PLOTLY)) return CHART_KIND_PLOTLY;
+		if (value.includes(TAG_MARIMO_VEGA)) {
+			return { kind: CHART_KIND_ALTAIR, objectId: chartObjectId(value, TAG_MARIMO_VEGA) };
+		}
+		if (value.includes(TAG_MARIMO_PLOTLY)) {
+			return { kind: CHART_KIND_PLOTLY, objectId: chartObjectId(value, TAG_MARIMO_PLOTLY) };
+		}
 	}
 	return null;
 }
@@ -573,8 +598,18 @@ function chartKind(record: Record<string, string>): string | null {
 /**
  * Render one cell output to Markdown, or `null` when it should be omitted
  * (interactive widgets, console-only/empty, or unsupported payloads).
+ *
+ * `charts` maps an interactive chart's `object-id` to a rasterized PNG data URI
+ * captured from the live session. When a chart output's id is present, its image
+ * is embedded; otherwise the chart falls back to the placeholder callout. The
+ * default empty map means "no images" (e.g. the CLI-fallback export), which
+ * preserves the placeholder-only behavior.
  */
-export function renderOutput(output: CellOutput, sink: ImageSink): string | null {
+export function renderOutput(
+	output: CellOutput,
+	sink: ImageSink,
+	charts: Record<string, string> = {}
+): string | null {
 	const record = dataRecord(output);
 	if (!record) {
 		if (typeof output.data === RUNTIME_CONSTANTS.TYPE_STRING) {
@@ -597,10 +632,15 @@ export function renderOutput(output: CellOutput, sink: ImageSink): string | null
 		const md = htmlToMarkdown(container, sink);
 		return md.length === 0 ? null : md;
 	}
-	// Interactive charts have no static equivalent here; emit a visible
+	// Interactive charts: embed a static image rasterized from the live session
+	// when one was captured for this chart's object-id; otherwise emit a visible
 	// placeholder so the chart is never silently dropped.
-	const chart = chartKind(record);
-	if (chart !== null) return formatChartPlaceholder(chart);
+	const chart = chartInfo(record);
+	if (chart !== null) {
+		const png = chart.objectId !== null ? charts[chart.objectId] : undefined;
+		if (png !== undefined && png.length > 0) return sink.addDataUri(png);
+		return formatChartPlaceholder(chart.kind);
+	}
 	if (containsWidget(record)) return null;
 
 	if (record[MIME_MARKDOWN] !== undefined) {
