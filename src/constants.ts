@@ -850,17 +850,25 @@ export function formatLiveExportScript(includeCode: boolean): string {
 				if (id && uri) charts[id] = uri;
 			}).catch(function () {}));
 		}
-		document.querySelectorAll("marimo-vega[object-id]").forEach(function (el) {
-			var id = el.getAttribute("object-id");
+		// marimo puts the stable object-id on the <marimo-ui-element> wrapper, not
+		// on the inner <marimo-vega>/<marimo-plotly>; resolve it from the wrapper.
+		function chartId(el) {
+			var wrap = el.closest ? el.closest("marimo-ui-element[object-id]") : null;
+			return wrap ? wrap.getAttribute("object-id") : el.getAttribute("object-id");
+		}
+		document.querySelectorAll("marimo-vega").forEach(function (el) {
+			var id = chartId(el);
+			if (!id) return;
 			var canvas = q(el, "canvas");
 			if (canvas) { try { record(id, canvas.toDataURL("image/png")); } catch (e) {} return; }
 			var svg = q(el, "svg");
 			if (svg) record(id, svgToPng(svg));
 		});
-		document.querySelectorAll("marimo-plotly[object-id]").forEach(function (el) {
-			var id = el.getAttribute("object-id");
-			var plot = q(el, ".js-plotly-plot") || q(el, "[class*='plotly']");
-			if (plot && window.Plotly && window.Plotly.toImage) {
+		document.querySelectorAll("marimo-plotly").forEach(function (el) {
+			var id = chartId(el);
+			if (!id) return;
+			var plot = q(el, ".js-plotly-plot") || q(el, "[class*='plotly']") || el;
+			if (window.Plotly && window.Plotly.toImage) {
 				record(id, window.Plotly.toImage(plot, { format: "png" }));
 				return;
 			}

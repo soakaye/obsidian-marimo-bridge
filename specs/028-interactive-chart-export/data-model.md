@@ -11,7 +11,7 @@ A chart in a cell's rendered output that may be matched to a captured image.
 
 | Field | Type | Source | Notes |
 |-------|------|--------|-------|
-| `objectId` | string | `object-id` attr on `<marimo-vega>` / `<marimo-plotly>` | Stable id shared by the exported HTML payload and the live editor DOM; correlation key. |
+| `objectId` | string | `object-id` attr on the `<marimo-ui-element>` wrapper (e.g. `bkHC-0`), NOT on the inner `<marimo-vega>`/`<marimo-plotly>` | Stable id shared by the exported HTML payload and the live editor DOM; correlation key. |
 | `kind` | `"Altair" \| "Plotly"` | tag (`<marimo-vega>` → Altair, `<marimo-plotly>` → Plotly) | Drives placeholder text and capture technique. |
 
 Identity: a chart output is identified by `objectId`. If `objectId` is absent or
@@ -24,7 +24,7 @@ A static raster image of a rendered chart.
 
 | Field | Type | Source | Notes |
 |-------|------|--------|-------|
-| `objectId` | string | live DOM element `object-id` | Map key linking back to the chart output. |
+| `objectId` | string | live DOM `<marimo-ui-element>` wrapper `object-id` (via `el.closest`) | Map key linking back to the chart output. |
 | `dataUri` | string | `canvas.toDataURL("image/png")` / `Plotly.toImage` / SVG→canvas | PNG data URI; consumed by `ImageSink.addDataUri`. |
 
 Resolution: produced at on-screen size × `devicePixelRatio` (FR-010).

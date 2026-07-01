@@ -32,10 +32,14 @@ keeps the converter clean.
 The webview returns `{ objectId → pngDataUri }`. In `renderOutput`, extract the
 `object-id` from the chart payload and look it up; on miss → placeholder.
 
-**Rationale**: `<marimo-vega object-id='…'>` / `<marimo-plotly object-id='…'>`
-carry a stable id present in BOTH the exported HTML payload (what the converter
-sees) and the live editor DOM (what the webview rasterizes), so the two sides
-correlate without relying on order. Per clarification, position/order matching is
+**Rationale**: marimo wraps each chart in `<marimo-ui-element object-id='…'>`
+(e.g. `bkHC-0`) — the `object-id` lives on the WRAPPER, not on the inner
+`<marimo-vega>`/`<marimo-plotly>` (verified by running `marimo export html` on
+`test/04_altair_chart.py`). This stable id is present in BOTH the exported HTML
+payload (what the converter sees) and the live editor DOM (what the webview
+rasterizes), so the two sides correlate without relying on order. The converter
+scans the chart output for its single `object-id`; the webview resolves it via
+`el.closest("marimo-ui-element[object-id]")`. Per clarification, position/order matching is
 explicitly disallowed (avoids showing the wrong chart's image). The existing
 attribute-extraction style (`attr(tag, /…/i)` used for mermaid `data-diagram`,
 tabs `data-tabs`) is reused for `object-id`.

@@ -18,7 +18,6 @@ import {
 	CH_SPACE,
 	CHAR_NEWLINE,
 	DATA_URI_PREFIX,
-	INDEX_NOT_FOUND,
 	OFFSET_ONE,
 	ENT_AMP,
 	ENT_APOS,
@@ -569,15 +568,13 @@ interface ChartInfo {
 	objectId: string | null;
 }
 
-/** The `object-id` of the first `tag` element inside `value`, or `null`. */
-function chartObjectId(value: string, tag: string): string | null {
-	const start = value.indexOf(tag);
-	if (start === INDEX_NOT_FOUND) return null;
-	const end = value.indexOf(CH_GT, start);
-	const opening =
-		end === INDEX_NOT_FOUND ? value.slice(start) : value.slice(start, end + OFFSET_ONE);
+/** The `object-id` carried by a chart output, or `null`. marimo puts the stable
+ * id on the `<marimo-ui-element>` wrapper (e.g. `object-id='bkHC-0'`), not on the
+ * inner `<marimo-vega>`/`<marimo-plotly>`; the chart output has exactly one
+ * `object-id`, so scan the whole payload for it. */
+function chartObjectId(value: string): string | null {
 	return attr(
-		opening,
+		value,
 		/\bobject-id\s*=\s*"([^"]*)"|\bobject-id\s*=\s*'([^']*)'/i
 	);
 }
@@ -586,10 +583,10 @@ function chartObjectId(value: string, tag: string): string | null {
 function chartInfo(record: Record<string, string>): ChartInfo | null {
 	for (const value of Object.values(record)) {
 		if (value.includes(TAG_MARIMO_VEGA)) {
-			return { kind: CHART_KIND_ALTAIR, objectId: chartObjectId(value, TAG_MARIMO_VEGA) };
+			return { kind: CHART_KIND_ALTAIR, objectId: chartObjectId(value) };
 		}
 		if (value.includes(TAG_MARIMO_PLOTLY)) {
-			return { kind: CHART_KIND_PLOTLY, objectId: chartObjectId(value, TAG_MARIMO_PLOTLY) };
+			return { kind: CHART_KIND_PLOTLY, objectId: chartObjectId(value) };
 		}
 	}
 	return null;
