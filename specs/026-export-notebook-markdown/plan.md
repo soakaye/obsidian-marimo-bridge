@@ -8,32 +8,21 @@
 
 Add two commands (and two `.py` file-menu items) that export the active marimo
 notebook to a static Obsidian Markdown note: one including source code, one
-outputs-only. The HTML is obtained from one of two sources:
-
-1. **Live session (preferred)** — when the notebook is open in a running marimo
-   editor, the plugin runs JS inside that editor's `<webview>` to call the edit
-   server's `POST /api/export/html`, serializing the **current session state**
-   (the user's live widget values) without re-executing the notebook.
-2. **CLI fallback** — otherwise it runs `marimo export html` (reusing
-   `ServerManager`'s environment resolution), which re-runs the notebook fresh
-   (initial widget values). When the notebook is not open in a marimo editor,
-   the plugin first shows a warning modal (`export-warning-modal.ts`) so the user
-   can proceed with initial values or cancel.
-
-In both cases the plugin reads the `__MARIMO_MOUNT_CONFIG__` object embedded in
-the produced HTML to obtain per-cell code (`notebook.cells`) and rendered outputs
-(`session.cells`). Outputs are converted to Markdown: `<marimo-tex>` math becomes
-Obsidian `$...$`/`$$...$$`, embedded raster images are saved as vault attachments
-via Obsidian's attachment API, and interactive `<marimo-ui-element>` widgets and
-console output are ignored. The result is written next to the notebook under a
-non-colliding name and opened. No headless browser, no external static-HTML tool,
-no new runtime dependency.
+outputs-only. The plugin runs `marimo export html` (reusing the existing
+execution-environment resolution in `ServerManager`), then reads the
+`__MARIMO_MOUNT_CONFIG__` object embedded in the produced HTML to obtain
+per-cell code (`notebook.cells`) and rendered outputs (`session.cells`). Outputs
+are converted to Markdown, embedded raster images are saved as vault attachments
+via Obsidian's attachment API, interactive widgets and console output are
+ignored, and the result is written next to the notebook under a non-colliding
+name and opened. No headless browser, no external static-HTML tool, no new
+runtime dependency.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.8 (ES modules), bundled with esbuild to `main.js`; runtime is Obsidian Desktop on Electron (Node + Chromium).
 
-**Primary Dependencies**: Obsidian API (`Vault`, `FileManager`, `Notice`, `Plugin`, `TFile`, `<webview>.executeJavaScript`); Node `child_process` (already used via `ServerManager.runCapture`), `fs`, `path`. The live export reuses the existing Electron `<webview>` injection path in `editor-view.ts` (no new Electron surface). No new npm runtime dependency — HTML→Markdown conversion is a small in-house converter (see research.md). All Node/Electron/Obsidian modules stay in the esbuild `external` list. Minimum Obsidian version is 1.5.7 (`FileManager.getAvailablePathForAttachment`).
+**Primary Dependencies**: Obsidian API (`Vault`, `FileManager`, `Notice`, `Plugin`, `TFile`); Node `child_process` (already used via `ServerManager.runCapture`), `fs`, `path`. No new npm runtime dependency — HTML→Markdown conversion is a small in-house converter (see research.md). All Node/Electron/Obsidian modules stay in the esbuild `external` list.
 
 **Storage**: Vault filesystem only — writes one `.md` file plus image attachments; reads/writes a temporary `.html` file that is always deleted.
 
@@ -54,7 +43,7 @@ no new runtime dependency.
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - **I. Language Division**: PASS — spec/plan/tasks/code/commits in English; user communication in Japanese.
-- **II. Desktop-Only Architecture**: PASS — uses `child_process`/`fs`; no mobile APIs introduced. The live export runs JS in the existing Electron `<webview>` (already a desktop-only dependency of the plugin), consistent with this principle.
+- **II. Desktop-Only Architecture**: PASS — uses `child_process`/`fs`; no mobile APIs introduced; no `<webview>` needed for this feature.
 - **III. Reliable Process Lifecycle**: PASS — export runs a short-lived subprocess captured via the existing `runCapture` (spawn → exit), not a long-lived server; nothing new to tear down on unload.
 - **IV. Safe Local Bindings**: N/A — export does not open a network server; it is a one-shot CLI invocation writing a local file. No token/port surface added.
 - **V. Virtual Environment Preference**: PASS — export reuses `ServerManager.resolveCommand()`, which already prefers the vault `.venv` before PATH.
@@ -84,30 +73,22 @@ specs/026-export-notebook-markdown/
 
 ```text
 src/
-├── main.ts                  # MODIFIED: register 2 commands + 2 file-menu items; findOpenNotebookView();
-│                            #           confirmExportWithoutLiveSession()
-├── editor-view.ts           # MODIFIED: exportLiveHtml()/getCurrentFile(); inject fetch-header capture
+├── main.ts                  # MODIFIED: register 2 commands + 2 file-menu items; orchestrate export
 ├── server-manager.ts        # MODIFIED: add public exportNotebookHtml() (resolveCommand + runCapture)
-├── notebook-export.ts       # NEW: orchestration — live-or-CLI HTML (+not-open warning), build, write files
+├── notebook-export.ts       # NEW: orchestration — run export, parse config, build markdown, write files
 ├── marimo-mount-config.ts   # NEW (pure): extract & parse __MARIMO_MOUNT_CONFIG__ from HTML text
-├── html-to-markdown.ts      # NEW (pure): minimal HTML→Markdown converter + output-cell rendering (incl. math)
-├── export-warning-modal.ts  # NEW: confirm modal for the not-open / initial-values case
-├── constants.ts             # MODIFIED: command ids/names, CLI args, mime/tag/math/suffix literals, notices,
-│                            #           webview header-capture + live-export scripts, warning-modal strings
-└── (embed-processor.ts, settings.ts, notebook-path.ts unchanged)
-
-manifest.json                # MODIFIED: minAppVersion 1.5.0 → 1.5.7
+├── html-to-markdown.ts      # NEW (pure): minimal HTML→Markdown converter + output-cell rendering
+├── constants.ts             # MODIFIED: new command ids/names, CLI args, mime/tag/suffix literals, notices
+└── (editor-view.ts, embed-processor.ts, settings.ts, notebook-path.ts unchanged)
 
 tests/
 ├── marimo-mount-config.test.ts   # NEW: extraction/normalization (trailing commas), missing/empty config
-├── html-to-markdown.test.ts      # NEW: md/html/text/math conversion, image extraction, widget ignore
-├── notebook-export.test.ts       # NEW: live-vs-CLI source, markdown build, attachment calls, atomicity
+├── html-to-markdown.test.ts      # NEW: md/html/text conversion, image extraction, widget ignore, console ignore
+├── notebook-export.test.ts       # NEW: end-to-end build from fixture config → markdown + attachment calls
 ├── server-manager.test.ts        # MODIFIED: exportNotebookHtml arg/command construction
-├── review-compliance.test.ts     # MODIFIED: minAppVersion assertion (1.5.7)
 └── fixtures/
-    ├── export-basic.html         # NEW: real export output (md + value cells), outputs-only
-    ├── export-basic-code.html    # NEW: same notebook with code included
-    ├── export-image.html         # NEW: matplotlib mimebundle + mo.image(url)
+    ├── export-basic.html         # NEW: real `marimo export html` output (md + value cells)
+    ├── export-image.html         # NEW: matplotlib mimebundle + mo.image
     └── export-widget.html        # NEW: mo.ui.slider + derived value cell
 ```
 
@@ -115,14 +96,9 @@ tests/
 **pure, dependency-free** modules (`marimo-mount-config.ts`, `html-to-markdown.ts`)
 that are trivially unit-testable under the existing esbuild+`node --test` harness,
 plus one **orchestration** module (`notebook-export.ts`) that touches the Obsidian
-`Vault`/`FileManager`, `ServerManager.exportNotebookHtml()` (CLI fallback), and
-`MarimoEditorView.exportLiveHtml()` (live session). `main.ts` wires the
-commands/menu items, exposes `findOpenNotebookView()` to locate the running
-editor, and calls the orchestrator. The live-export mechanism lives in
-`editor-view.ts` (it owns the `<webview>`): an injected script captures the marimo
-client's request headers so a later injected script can `POST /api/export/html`
-with that session's identity. The conversion modules are agnostic to which source
-produced the HTML.
+`Vault`/`FileManager` and the new `ServerManager.exportNotebookHtml()`. `main.ts`
+only wires commands/menu items and calls the orchestrator, mirroring how it
+currently wires `openMarimo`/`createNotebook`.
 
 ## Complexity Tracking
 

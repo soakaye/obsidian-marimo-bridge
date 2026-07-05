@@ -169,35 +169,23 @@ export async function exportNotebookToMarkdown(
 	const base = notebookBaseName(notebookPath);
 	let tempDir: string | null = null;
 	try {
-		// Prefer the live running session (reflects current widget values).
-		const liveView = plugin.findOpenNotebookView(notebookPath);
-		let html = liveView ? await liveView.exportLiveHtml(includeCode) : null;
+		tempDir = mkdtempSync(path.join(tmpdir(), EXPORT_TEMP_PREFIX));
+		const outHtml = path.join(tempDir, base + EXT_HTML);
 
-		if (html === null) {
-			// No live session (or live export failed). When the notebook is not
-			// open in a marimo editor, warn the user that the CLI fallback uses
-			// initial widget values, and let them cancel.
-			if (!liveView) {
-				const proceed = await plugin.confirmExportWithoutLiveSession();
-				if (!proceed) return;
-			}
-			tempDir = mkdtempSync(path.join(tmpdir(), EXPORT_TEMP_PREFIX));
-			const outHtml = path.join(tempDir, base + EXT_HTML);
-			const result = await plugin.servers.exportNotebookHtml(
-				resolved.absolutePath,
-				includeCode,
-				outHtml
+		const result = await plugin.servers.exportNotebookHtml(
+			resolved.absolutePath,
+			includeCode,
+			outHtml
+		);
+		if (result.code !== 0) {
+			new Notice(
+				formatExportFailureNotice(result.stderr.trim() || base),
+				NOTICE_TIMEOUT_MS
 			);
-			if (result.code !== 0) {
-				new Notice(
-					formatExportFailureNotice(result.stderr.trim() || base),
-					NOTICE_TIMEOUT_MS
-				);
-				return;
-			}
-			html = readFileSync(outHtml, ENCODING_UTF8);
+			return;
 		}
 
+		const html = readFileSync(outHtml, ENCODING_UTF8);
 		const config = extractMountConfig(html);
 		if (!config) {
 			new Notice(
