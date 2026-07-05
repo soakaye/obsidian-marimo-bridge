@@ -45,7 +45,7 @@ notes. Edits are written straight back to the real `.py` file on disk.
 
 ## Requirements
 
-- Obsidian **1.5.0+** (desktop).
+- Obsidian **1.5.7+** (desktop).
 - [Python](https://www.python.org/) with [marimo](https://marimo.io/) installed.
   You can install marimo from the plugin settings, or manually:
 
