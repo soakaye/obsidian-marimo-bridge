@@ -116,8 +116,7 @@ function resolveMarkdownPath(
 function buildMarkdown(
 	config: MarimoMountConfig,
 	includeCode: boolean,
-	sink: ImageSink,
-	charts: Record<string, string>
+	sink: ImageSink
 ): string {
 	const notebookCells = config.notebook.cells;
 	const sessionCells = config.session.cells;
@@ -137,7 +136,7 @@ function buildMarkdown(
 			);
 		}
 		for (const output of outputs ?? []) {
-			const rendered = renderOutput(output, sink, charts);
+			const rendered = renderOutput(output, sink);
 			if (rendered && rendered.length > 0) cellParts.push(rendered);
 		}
 		if (cellParts.length > 0) blocks.push(cellParts.join(MD_BLANK_LINE));
@@ -170,13 +169,9 @@ export async function exportNotebookToMarkdown(
 	const base = notebookBaseName(notebookPath);
 	let tempDir: string | null = null;
 	try {
-		// Prefer the live running session (reflects current widget values). The
-		// live export also carries rasterized images for interactive charts,
-		// keyed by object-id; the CLI fallback has none (charts stay placeholders).
+		// Prefer the live running session (reflects current widget values).
 		const liveView = plugin.findOpenNotebookView(notebookPath);
-		const live = liveView ? await liveView.exportLiveHtml(includeCode) : null;
-		let html = live ? live.html : null;
-		const charts: Record<string, string> = live ? live.charts : {};
+		let html = liveView ? await liveView.exportLiveHtml(includeCode) : null;
 
 		if (html === null) {
 			// No live session (or live export failed). When the notebook is not
@@ -214,7 +209,7 @@ export async function exportNotebookToMarkdown(
 
 		const markdownPath = resolveMarkdownPath(plugin, notebookPath);
 		const sink = new CollectingImageSink();
-		let markdown = buildMarkdown(config, includeCode, sink, charts);
+		let markdown = buildMarkdown(config, includeCode, sink);
 
 		for (let i = 0; i < sink.pending.length; i++) {
 			const image = sink.pending[i];

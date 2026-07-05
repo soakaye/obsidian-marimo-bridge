@@ -31,7 +31,6 @@ function makeHarness(options: {
 	exitCode?: number;
 	existing?: string[];
 	liveFixture?: string;
-	liveCharts?: Record<string, string>;
 	confirm?: boolean;
 }): Harness {
 	const vaultDir = mkdtempSync(path.join(tmpdir(), "marimo-export-vault-"));
@@ -115,12 +114,8 @@ function makeHarness(options: {
 	const findOpenNotebookView = (_path: string) => {
 		if (!live) return null;
 		return {
-			exportLiveHtml: async (
-				_includeCode: boolean
-			): Promise<{ html: string; charts: Record<string, string> }> => ({
-				html: readFileSync(path.join(fixtures, live), "utf8"),
-				charts: options.liveCharts ?? {},
-			}),
+			exportLiveHtml: async (_includeCode: boolean): Promise<string> =>
+				readFileSync(path.join(fixtures, live), "utf8"),
 		};
 	};
 
