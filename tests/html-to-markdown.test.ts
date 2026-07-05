@@ -273,20 +273,13 @@ test("US5: emits a placeholder for interactive Altair and Plotly charts", () => 
 	assert.match(plotly, /Interactive chart \(Plotly\)/);
 });
 
-// marimo carries the stable object-id on the <marimo-ui-element> wrapper
-// (e.g. object-id='bkHC-0'), not on the inner <marimo-vega>/<marimo-plotly>.
-const ALTAIR_HTML =
-	"<marimo-ui-element object-id='bkHC-0'><marimo-vega data-spec='{}'></marimo-vega></marimo-ui-element>";
-const PLOTLY_HTML =
-	"<marimo-ui-element object-id='xy12-3'><marimo-plotly data-spec='{}'></marimo-plotly></marimo-ui-element>";
-
 test("US1: embeds a rasterized image when the chart object-id is in the charts map", () => {
 	const altairPng = "data:image/png;base64,AAA";
 	const altairSink = new FakeSink();
 	const altair = renderOutput(
-		{ data: { "text/html": ALTAIR_HTML } },
+		{ data: { "text/html": "<marimo-ui-element><marimo-vega object-id='v'></marimo-vega></marimo-ui-element>" } },
 		altairSink,
-		{ "bkHC-0": altairPng }
+		{ v: altairPng }
 	);
 	assert.equal(altair, "__IMG_0__");
 	assert.deepEqual(altairSink.uris, [altairPng]);
@@ -294,9 +287,9 @@ test("US1: embeds a rasterized image when the chart object-id is in the charts m
 	const plotlyPng = "data:image/png;base64,BBB";
 	const plotlySink = new FakeSink();
 	const plotly = renderOutput(
-		{ data: { "text/html": PLOTLY_HTML } },
+		{ data: { "text/html": "<marimo-ui-element><marimo-plotly object-id='p'></marimo-plotly></marimo-ui-element>" } },
 		plotlySink,
-		{ "xy12-3": plotlyPng }
+		{ p: plotlyPng }
 	);
 	assert.equal(plotly, "__IMG_0__");
 	assert.deepEqual(plotlySink.uris, [plotlyPng]);
@@ -305,7 +298,7 @@ test("US1: embeds a rasterized image when the chart object-id is in the charts m
 test("US2: falls back to the placeholder when no chart image matches the object-id", () => {
 	// Non-matching key → placeholder, never another chart's image (no positional match).
 	const mismatch = renderOutput(
-		{ data: { "text/html": ALTAIR_HTML } },
+		{ data: { "text/html": "<marimo-ui-element><marimo-vega object-id='v'></marimo-vega></marimo-ui-element>" } },
 		new FakeSink(),
 		{ "other-id": "data:image/png;base64,AAA" }
 	);
@@ -315,7 +308,7 @@ test("US2: falls back to the placeholder when no chart image matches the object-
 
 	// Empty map (e.g. CLI-fallback export) → placeholder, matching default behavior.
 	const empty = renderOutput(
-		{ data: { "text/html": PLOTLY_HTML } },
+		{ data: { "text/html": "<marimo-ui-element><marimo-plotly object-id='p'></marimo-plotly></marimo-ui-element>" } },
 		new FakeSink(),
 		{}
 	);
