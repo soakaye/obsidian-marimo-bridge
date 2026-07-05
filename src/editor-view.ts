@@ -13,7 +13,6 @@ import { getFilePathFromUrl } from "./url-utils";
 import {
 	VIEW_TYPE_MARIMO,
 	ICON_MARIMO_LOGO,
-	formatLiveExportScript,
 	CLS_BRIDGE_VIEW,
 	CLS_LOADING,
 	CLS_LOADING_OVERLAY,
@@ -113,37 +112,6 @@ function isString(value: unknown): value is string {
 	return typeof value === RUNTIME_CONSTANTS.TYPE_STRING;
 }
 
-/**
- * Result of a LIVE session export: the notebook HTML plus a map of interactive
- * chart `object-id` → PNG data URI rasterized from the live webview DOM. The
- * map is empty when no charts were captured.
- */
-export interface LiveExportResult {
-	html: string;
-	charts: Record<string, string>;
-}
-
-/**
- * Validate the raw value returned by the in-webview export script into a
- * {@link LiveExportResult}, or `null` when it is not a usable result (missing
- * HTML, wrong shape). Only string-valued chart entries are kept.
- */
-function parseLiveExportResult(value: unknown): LiveExportResult | null {
-	if (typeof value !== RUNTIME_CONSTANTS.TYPE_OBJECT || value === null) {
-		return null;
-	}
-	const obj = value as Record<string, unknown>;
-	if (!isString(obj.html)) return null;
-	const charts: Record<string, string> = {};
-	const raw = obj.charts;
-	if (typeof raw === RUNTIME_CONSTANTS.TYPE_OBJECT && raw !== null) {
-		for (const [key, uri] of Object.entries(raw as Record<string, unknown>)) {
-			if (isString(uri)) charts[key] = uri;
-		}
-	}
-	return { html: obj.html, charts };
-}
-
 function isBridgeOpenMessage(value: unknown): value is BridgeOpenMessage {
 	if (
 		typeof value !== RUNTIME_CONSTANTS.TYPE_OBJECT ||
@@ -186,32 +154,6 @@ export class MarimoEditorView extends ItemView {
 
 	getIcon(): string {
 		return ICON_MARIMO_LOGO;
-	}
-
-	/** Vault-relative path of the notebook this view is showing, if any. */
-	getCurrentFile(): string | undefined {
-		return this.currentFile;
-	}
-
-	/**
-	 * Export the LIVE marimo session (current widget values) to HTML by calling
-	 * the running edit server's `/api/export/html` from inside the webview, and
-	 * rasterize any rendered interactive charts to PNG data URIs in the same
-	 * pass. Returns the HTML plus the chart-image map, or `null` when the
-	 * webview/session is not ready (the caller then falls back to a fresh CLI
-	 * export).
-	 */
-	async exportLiveHtml(includeCode: boolean): Promise<LiveExportResult | null> {
-		const webview = this.webview as MarimoWebviewElement | null;
-		if (!webview?.executeJavaScript) return null;
-		try {
-			const result = await webview.executeJavaScript(
-				formatLiveExportScript(includeCode)
-			);
-			return parseLiveExportResult(result);
-		} catch {
-			return null;
-		}
 	}
 
 	/**

@@ -14,9 +14,6 @@ export const DEFAULT_EMBED_MODE = "edit" as const;
 export const DEFAULT_EMBED_HEIGHT = 600;
 export const DEFAULT_SHOW_CONTEXT_MENU = true;
 export const DEFAULT_SHOW_MARKDOWN_CONTEXT_MENU = false;
-// Experimental: Markdown export is a best-effort static conversion, NOT a
-// faithful reproduction of marimo's live rendering, so it ships off by default.
-export const DEFAULT_ENABLE_MARKDOWN_EXPORT = false;
 export const DEFAULT_API_TOKEN = "";
 export const DEFAULT_UV_PATH = "";
 
@@ -59,9 +56,6 @@ export const SETTING_EMBED_HEIGHT_NAME = "Default embed height (px)";
 export const SETTING_CONTEXT_MENU_NAME = "Enable file explorer context menu";
 export const SETTING_MD_CONTEXT_MENU_NAME = "Open Markdown files in marimo";
 export const SETTING_API_TOKEN_NAME = "API token";
-export const SETTING_EXPERIMENTAL_HEADER = "Experimental";
-export const SETTING_ENABLE_MARKDOWN_EXPORT_NAME =
-	"Enable Markdown export";
 export const SETTING_API_TOKEN_DESC = "API token for authenticating with the marimo server. If left empty, a secure, random session token is generated on startup.";
 export const SETTING_API_TOKEN_WARN = "Changing this token stops the current server; it restarts on the next use.";
 
@@ -229,34 +223,6 @@ export const INJECTION_SCRIPT = `(function () {
 		return null;
 	};
 
-	// Capture the marimo client's request headers (session id, server token,
-	// auth) so the host can replay them to export the LIVE session as HTML,
-	// reflecting current widget values. We only remember requests that carry a
-	// Marimo-Session-Id, i.e. real kernel RPC/health calls.
-	var __nativeFetch = window.fetch;
-	window.__marimoBridgeHeaders = null;
-	window.fetch = function (input, init) {
-		try {
-			var raw = init && init.headers;
-			if (raw) {
-				var obj = {};
-				if (typeof Headers !== "undefined" && raw instanceof Headers) {
-					raw.forEach(function (v, k) { obj[k] = v; });
-				} else if (Array.isArray(raw)) {
-					raw.forEach(function (pair) { obj[pair[0]] = pair[1]; });
-				} else {
-					for (var k in raw) { obj[k] = raw[k]; }
-				}
-				if (obj["Marimo-Session-Id"] || obj["marimo-session-id"]) {
-					window.__marimoBridgeHeaders = obj;
-				}
-			}
-		} catch (e) {
-			// Ignore header capture failures; export falls back to the CLI.
-		}
-		return __nativeFetch.apply(this, arguments);
-	};
-
 	// Capture phase: run before the page's own handlers and cancel the default
 	// navigation for links that target a new window/tab.
 	window.addEventListener(
@@ -321,7 +287,6 @@ export const KEY_HEIGHT = "height";
 export const MODE_EDIT = "edit";
 export const MODE_RUN = "run";
 export const TAG_DIV = "div";
-export const TAG_PARAGRAPH = "p";
 export const CHAR_COLON = ":";
 export const CHAR_HASH = "#";
 export const RADIX_DECIMAL = 10;
@@ -330,133 +295,6 @@ export const CHAR_DOT = ".";
 export const CHAR_NEWLINE = "\n";
 export const OFFSET_ONE = 1;
 export const TEXT_RUN_SERVER_ERROR_PREFIX = "Could not start a run server for ";
-
-// Markdown export (feature 026: export notebook to static Markdown)
-export const CMD_EXPORT = "export";
-export const CMD_ARG_HTML = "html";
-export const CMD_ARG_OUTPUT = "-o";
-export const CMD_ARG_NO_INCLUDE_CODE = "--no-include-code";
-
-export const CMD_EXPORT_MARKDOWN_ID = "export-marimo-notebook-markdown";
-export const CMD_EXPORT_MARKDOWN_NAME = "Export active marimo notebook to Markdown";
-export const CMD_EXPORT_OUTPUTS_MARKDOWN_ID = "export-marimo-notebook-outputs-markdown";
-export const CMD_EXPORT_OUTPUTS_MARKDOWN_NAME = "Export active marimo notebook outputs only to Markdown";
-
-export const EXT_MD = ".md";
-export const EXT_HTML = ".html";
-export const EXT_PNG = ".png";
-export const COLLISION_SEPARATOR = "-";
-export const EXPORT_TEMP_PREFIX = "marimo-export-";
-
-/** Timeout for one `marimo export html` invocation (ms). */
-export const EXPORT_TIMEOUT_MS = 120000;
-
-export const MIME_MARKDOWN = "text/markdown";
-export const MIME_HTML = "text/html";
-export const MIME_PLAIN = "text/plain";
-export const MIME_PNG = "image/png";
-export const MIME_MARIMO_BUNDLE = "application/vnd.marimo+mimebundle";
-
-/** Marker and anchor that bracket the embedded notebook session JSON. */
-export const CONFIG_MARKER = "__MARIMO_MOUNT_CONFIG__";
-export const CONFIG_FREEZE_ANCHOR = "Object.freeze(";
-
-export const CH_OPEN_BRACE = "{";
-export const CH_CLOSE_BRACE = "}";
-export const CH_QUOTE = '"';
-export const CH_SPACE = " ";
-export const CH_AMP = "&";
-export const CH_LT = "<";
-export const CH_GT = ">";
-export const CH_APOS = "'";
-
-export const ENCODING_BASE64 = "base64";
-export const DATA_URI_PREFIX = "data:";
-export const BASE64_MARKER = ";base64,";
-
-/** Sentinel wrapping an image placeholder before its attachment link is resolved. */
-export const IMAGE_TOKEN_OPEN = "@@marimo-image-";
-export const IMAGE_TOKEN_CLOSE = "@@";
-
-/** Wrapper element marimo emits for interactive UI widgets (`mo.ui.*`). */
-export const TAG_MARIMO_UI_ELEMENT = "<marimo-ui-element";
-
-/**
- * Table widget marimo emits for a displayed DataFrame. Although wrapped in a
- * `marimo-ui-element`, it carries the (preview) rows statically in its
- * `data-data` attribute, so the export renders them rather than dropping it.
- */
-export const TAG_MARIMO_TABLE = "<marimo-table";
-
-/** marimo custom elements recognized for feature-027 conversion rules. */
-export const TAG_MARIMO_MERMAID = "<marimo-mermaid";
-export const TAG_MARIMO_TABS = "<marimo-tabs";
-export const TAG_MARIMO_ACCORDION = "<marimo-accordion";
-export const TAG_MARIMO_VEGA = "<marimo-vega";
-export const TAG_MARIMO_PLOTLY = "<marimo-plotly";
-/** Class marimo gives rendered admonition blocks (`<div class="admonition T">`). */
-export const CLASS_ADMONITION = "admonition";
-
-/** marimo wraps rendered LaTeX in this non-interactive element. */
-export const TEX_INLINE_OPEN = "||(";
-export const TEX_INLINE_CLOSE = "||)";
-export const TEX_BLOCK_OPEN = "||[";
-export const TEX_BLOCK_CLOSE = "||]";
-export const MD_MATH_INLINE = "$";
-export const MD_MATH_BLOCK = "$$";
-
-/** Regex capture-group indices used when reading HTML attributes. */
-export const REGEX_GROUP_FIRST = 1;
-export const REGEX_GROUP_SECOND = 2;
-
-// Markdown emit tokens
-export const MD_FENCE = "```";
-export const MD_LANG_PYTHON = "python";
-export const MD_BOLD = "**";
-export const MD_ITALIC = "_";
-export const MD_CODE = "`";
-export const MD_BULLET = "- ";
-export const MD_ORDERED_MARKER = ". ";
-export const MD_LINK_OPEN = "[";
-export const MD_LINK_MID = "](";
-export const MD_LINK_CLOSE = ")";
-export const MD_IMAGE_PREFIX = "!";
-export const MD_TABLE_PIPE = " | ";
-export const MD_TABLE_EDGE = "|";
-export const MD_TABLE_SEP_CELL = " --- ";
-export const MD_BLANK_LINE = "\n\n";
-
-// Feature 027: callout / quote / mermaid / chart / media emit tokens
-export const MD_CALLOUT_PREFIX = "> [!";
-export const MD_CALLOUT_CLOSE = "]";
-export const MD_CALLOUT_COLLAPSE = "-";
-export const MD_QUOTE_PREFIX = "> ";
-export const MD_LANG_MERMAID = "mermaid";
-export const CALLOUT_TYPE_NOTE = "note";
-export const CHART_PLACEHOLDER_OPEN = "Interactive chart (";
-export const CHART_PLACEHOLDER_CLOSE = ") — not exported";
-export const MEDIA_TOKEN_OPEN = "@@marimo-media-";
-export const CHART_KIND_ALTAIR = "Altair";
-export const CHART_KIND_PLOTLY = "Plotly";
-/** Heading level used for an unwrapped tab's label. */
-export const HEADING_LEVEL_TAB = 4;
-
-// Warning modal shown when exporting a notebook that is not open in a marimo
-// editor (no live session → CLI fallback uses initial widget values).
-export const EXPORT_WARNING_TITLE = "Export without live values";
-export const EXPORT_WARNING_BODY = "This notebook is not open in the marimo editor, so the export cannot capture your current interactive values (e.g. slider positions). It will run the notebook fresh and use initial values. Open the notebook in marimo first to export the values you see. Continue anyway?";
-export const EXPORT_WARNING_CONTINUE = "Export with initial values";
-export const EXPORT_WARNING_CANCEL = "Cancel";
-
-// HTML entities decoded during conversion
-export const ENT_AMP = "&amp;";
-export const ENT_LT = "&lt;";
-export const ENT_GT = "&gt;";
-export const ENT_QUOT = "&quot;";
-export const ENT_APOS = "&#39;";
-export const ENT_NBSP = "&nbsp;";
-/** Numeric entity for a backslash; marimo uses it in `data-data` JSON. */
-export const ENT_BACKSLASH = "&#92;";
 
 // Template & SVG
 export const NEW_NOTEBOOK_TEMPLATE = `import marimo
@@ -490,7 +328,6 @@ export const SETTING_TAKEOVER_DESC = "When on, clicking a .py file opens the mar
 export const SETTING_EMBED_MODE_DESC = "Mode for ```marimo blocks when not specified.";
 export const SETTING_CONTEXT_MENU_DESC = "When enabled, right-clicking files and folders in the file explorer shows the 'create new marimo notebook' option.";
 export const SETTING_MD_CONTEXT_MENU_DESC = "When enabled, right-clicking a Markdown (.md) file in the file explorer shows an 'Open in marimo' option. Requires a marimo Markdown integration (e.g. mkdocs-marimo or quarto-marimo) installed in your marimo environment for the file to open as a notebook.";
-export const SETTING_ENABLE_MARKDOWN_EXPORT_DESC = "When enabled, adds the 'Export to Markdown' commands and file-explorer context-menu items for marimo notebooks. This is a best-effort static conversion and does NOT faithfully reproduce marimo's live rendering; some interactive or richly-formatted outputs are approximated or replaced with placeholders.";
 export const TEXT_EMBED_MODE_EDIT = "Edit (full editor)";
 export const TEXT_EMBED_MODE_RUN = "Run (read-only app)";
 export const TEXT_NOT_INSTALLED_ERROR = "Marimo is not installed. Install it from the marimo bridge settings.";
@@ -714,173 +551,4 @@ export function formatUvInstallTargetDescription(
 	pythonPath: string
 ): string {
 	return `${uvCommand} pip install marimo --python ${pythonPath}`;
-}
-
-export function formatExportSuccessNotice(markdownPath: string): string {
-	return `Exported notebook to ${markdownPath}`;
-}
-
-export function formatExportFailureNotice(reason: string): string {
-	return `marimo export failed: ${reason}`;
-}
-
-/** Diagnostic used when the export ran but no embedded session data was found. */
-export function formatExportParseFailure(notebookName: string): string {
-	return `could not read export data from ${notebookName}`;
-}
-
-/** Heading prefix of `level` hashes followed by a space. */
-export function formatHeadingPrefix(level: number): string {
-	return `${CHAR_HASH.repeat(level)}${CH_SPACE}`;
-}
-
-/** Obsidian callout header: `> [!type] Title`, or `> [!type]- Title` when collapsed. */
-export function formatCallout(type: string, title: string, collapsed: boolean): string {
-	return (
-		MD_CALLOUT_PREFIX +
-		type +
-		MD_CALLOUT_CLOSE +
-		(collapsed ? MD_CALLOUT_COLLAPSE : "") +
-		CH_SPACE +
-		title
-	);
-}
-
-/** A fenced ` ```mermaid ` block carrying a diagram's source. */
-export function formatMermaidBlock(source: string): string {
-	return MD_FENCE + MD_LANG_MERMAID + CHAR_NEWLINE + source + CHAR_NEWLINE + MD_FENCE;
-}
-
-/** Placeholder callout standing in for an un-rasterized interactive chart. */
-export function formatChartPlaceholder(kind: string): string {
-	return formatCallout(
-		CALLOUT_TYPE_NOTE,
-		CHART_PLACEHOLDER_OPEN + kind + CHART_PLACEHOLDER_CLOSE,
-		false
-	);
-}
-
-/** Sentinel that protects a media element from the tag-stripping passes. */
-export function formatMediaToken(index: number): string {
-	return MEDIA_TOKEN_OPEN + index.toString() + IMAGE_TOKEN_CLOSE;
-}
-
-/** Collision-avoiding base name: `base-1`, `base-2`, … */
-export function formatCollisionBase(base: string, index: number): string {
-	return `${base}${COLLISION_SEPARATOR}${index.toString()}`;
-}
-
-/** Attachment image base name derived from the notebook and output index. */
-export function formatExportImageName(
-	notebookBase: string,
-	index: number
-): string {
-	return `${notebookBase}${COLLISION_SEPARATOR}${index.toString()}${EXT_PNG}`;
-}
-
-/** Placeholder embedded in Markdown until the image attachment link is resolved. */
-export function formatImageToken(index: number): string {
-	return `${IMAGE_TOKEN_OPEN}${index.toString()}${IMAGE_TOKEN_CLOSE}`;
-}
-
-/**
- * Script run inside the marimo `<webview>` to export the LIVE session as HTML
- * via `POST /api/export/html`, reusing the headers captured by the injection
- * script. In addition to the HTML, it rasterizes any rendered interactive charts
- * (Altair/Vega, Plotly) in the live editor DOM to PNG data URIs, keyed by their
- * `object-id`, so the converter can embed a static image instead of a
- * placeholder. Resolves to `{ html, charts }`, or `null` when no live
- * session/headers are available (caller then falls back to the CLI export).
- */
-export function formatLiveExportScript(includeCode: boolean): string {
-	return `(async function () {
-	try {
-		var headers = window.__marimoBridgeHeaders;
-		if (!headers) return null;
-		var sent = {};
-		for (var k in headers) { sent[k] = headers[k]; }
-		sent["Content-Type"] = "application/json";
-		var url = new URL("/api/export/html", window.location.href).href;
-		var res = await fetch(url, {
-			method: "POST",
-			headers: sent,
-			body: JSON.stringify({
-				download: false,
-				files: [],
-				includeCode: ${includeCode ? "true" : "false"},
-				assetUrl: null
-			})
-		});
-		if (!res.ok) return null;
-		var html = await res.text();
-		var charts = {};
-		function q(el, sel) {
-			return el.querySelector(sel) ||
-				(el.shadowRoot ? el.shadowRoot.querySelector(sel) : null);
-		}
-		function svgToPng(svg) {
-			return new Promise(function (resolve) {
-				try {
-					var xml = new XMLSerializer().serializeToString(svg);
-					var rect = svg.getBoundingClientRect();
-					var ratio = window.devicePixelRatio || 1;
-					var img = new Image();
-					img.onload = function () {
-						try {
-							var w = rect.width || svg.clientWidth || 600;
-							var h = rect.height || svg.clientHeight || 400;
-							var canvas = document.createElement("canvas");
-							canvas.width = w * ratio;
-							canvas.height = h * ratio;
-							canvas.getContext("2d").drawImage(
-								img, 0, 0, canvas.width, canvas.height
-							);
-							resolve(canvas.toDataURL("image/png"));
-						} catch (e) { resolve(null); }
-					};
-					img.onerror = function () { resolve(null); };
-					img.src = "data:image/svg+xml;charset=utf-8," +
-						encodeURIComponent(xml);
-				} catch (e) { resolve(null); }
-			});
-		}
-		var tasks = [];
-		function record(id, value) {
-			tasks.push(Promise.resolve(value).then(function (uri) {
-				if (id && uri) charts[id] = uri;
-			}).catch(function () {}));
-		}
-		// marimo puts the stable object-id on the <marimo-ui-element> wrapper, not
-		// on the inner <marimo-vega>/<marimo-plotly>; resolve it from the wrapper.
-		function chartId(el) {
-			var wrap = el.closest ? el.closest("marimo-ui-element[object-id]") : null;
-			return wrap ? wrap.getAttribute("object-id") : el.getAttribute("object-id");
-		}
-		document.querySelectorAll("marimo-vega").forEach(function (el) {
-			var id = chartId(el);
-			if (!id) return;
-			var canvas = q(el, "canvas");
-			if (canvas) { try { record(id, canvas.toDataURL("image/png")); } catch (e) {} return; }
-			var svg = q(el, "svg");
-			if (svg) record(id, svgToPng(svg));
-		});
-		document.querySelectorAll("marimo-plotly").forEach(function (el) {
-			var id = chartId(el);
-			if (!id) return;
-			var plot = q(el, ".js-plotly-plot") || q(el, "[class*='plotly']") || el;
-			if (window.Plotly && window.Plotly.toImage) {
-				record(id, window.Plotly.toImage(plot, { format: "png" }));
-				return;
-			}
-			var canvas = q(el, "canvas");
-			if (canvas) { try { record(id, canvas.toDataURL("image/png")); } catch (e) {} return; }
-			var svg = q(el, "svg");
-			if (svg) record(id, svgToPng(svg));
-		});
-		await Promise.all(tasks);
-		return { html: html, charts: charts };
-	} catch (e) {
-		return null;
-	}
-})()`;
 }
