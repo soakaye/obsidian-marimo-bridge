@@ -377,6 +377,60 @@ test("onload() reports a .py extension conflict exactly once (US2, FR-004, FR-00
 	});
 });
 
+test("onload() catches any .py claim failure, not just Obsidian's specific conflict message (research.md R3)", async () => {
+	// The catch must not narrow on Obsidian's exact wording — that string is
+	// unstable across versions/locales and is only ONE way the optional claim
+	// can fail. Prove it with an unrelated Error and, separately, a thrown
+	// non-Error value (both are legal `throw` targets in JS).
+	await withFakeWindow(async () => {
+		await withCapturedWarnings(async (warnings) => {
+			resetNoticeMessages();
+			const unrelated = new Error("boom");
+			const harness = makeOnloadHarness({
+				takeOverPyExtension: true,
+				registerExtensionsImpl: () => {
+					throw unrelated;
+				},
+			});
+
+			await assert.doesNotReject(harness.plugin.onload());
+
+			assert.deepEqual(getNoticeMessages(), [
+				RUNTIME_CONSTANTS.NOTICE_PY_EXTENSION_CONFLICT,
+			]);
+			assert.equal(warnings.length, 1);
+			const [warning] = warnings;
+			assert.ok(warning);
+			assert.equal(warning[1], unrelated);
+		});
+	});
+
+	await withFakeWindow(async () => {
+		await withCapturedWarnings(async (warnings) => {
+			resetNoticeMessages();
+			const harness = makeOnloadHarness({
+				takeOverPyExtension: true,
+				registerExtensionsImpl: () => {
+					// Intentionally a non-Error throw: research.md R3 requires the
+					// catch to be broad, not narrowed to `instanceof Error`.
+					// eslint-disable-next-line @typescript-eslint/only-throw-error
+					throw "not an Error instance";
+				},
+			});
+
+			await assert.doesNotReject(harness.plugin.onload());
+
+			assert.deepEqual(getNoticeMessages(), [
+				RUNTIME_CONSTANTS.NOTICE_PY_EXTENSION_CONFLICT,
+			]);
+			assert.equal(warnings.length, 1);
+			const [warning] = warnings;
+			assert.ok(warning);
+			assert.equal(warning[1], "not an Error instance");
+		});
+	});
+});
+
 test("onload() claims .py silently when the extension is free (FR-006, FR-007)", async () => {
 	await withFakeWindow(async () => {
 		await withCapturedWarnings(async (warnings) => {
