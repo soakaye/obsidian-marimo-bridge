@@ -126,10 +126,7 @@ export default class MarimoBridgePlugin extends Plugin {
 		// Optionally make `.py` open in the marimo editor by default. Obsidian
 		// delivers the opened file to the view via its view state ({ file }).
 		if (this.settings.takeOverPyExtension) {
-			this.registerExtensions(
-				[RUNTIME_CONSTANTS.EXTENSION_PY],
-				VIEW_TYPE_MARIMO
-			);
+			this.registerPyExtension();
 		}
 
 		// Inline embeds: ```marimo code blocks become <webview>s.
@@ -263,6 +260,29 @@ export default class MarimoBridgePlugin extends Plugin {
 		// Tear down every server we started (best-effort; safe if none ran).
 		// `serverManager` is unset when onload bailed early (non-FileSystem vault).
 		this.serverManager?.stopAll();
+	}
+
+	/**
+	 * Claim `.py` as a marimo-owned extension. Obsidian's view registry allows
+	 * only one owner per extension and *throws* when it is already taken (e.g.
+	 * another installed plugin registered `.py` first). That claim is an
+	 * optional convenience, not a requirement for the plugin to function, so a
+	 * competing owner must never abort {@link onload}: catch the failure,
+	 * report it, and let start-up continue with every other registration.
+	 */
+	private registerPyExtension(): void {
+		try {
+			this.registerExtensions(
+				[RUNTIME_CONSTANTS.EXTENSION_PY],
+				VIEW_TYPE_MARIMO
+			);
+		} catch (e) {
+			console.warn(RUNTIME_CONSTANTS.LOG_PY_EXTENSION_CONFLICT, e);
+			new Notice(
+				RUNTIME_CONSTANTS.NOTICE_PY_EXTENSION_CONFLICT,
+				NOTICE_TIMEOUT_MS
+			);
+		}
 	}
 
 	/**

@@ -8,6 +8,14 @@
 
 **Input**: User description: "fix Plugin fails to load if another plugin registers the \".py\" extension"
 
+## Clarifications
+
+### Session 2026-08-14
+
+- Q: Should the conflict warning repeat on every plugin load, or be suppressible? → A: Repeat once per plugin load; add no persisted suppression state.
+- Q: Should the conflict warning be raised immediately during start-up, or deferred until the workspace is ready? → A: Immediately during start-up, matching the existing start-up notices.
+- Q: Should the preferences screen show a live conflict indicator, or only a static explanation? → A: Static explanation only; no live indicator and no disabled toggle.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Plugin Loads Alongside Another `.py` Owner (Priority: P1)
@@ -72,11 +80,11 @@ As a user reviewing the plugin preferences, I want the "open `.py` in marimo by 
 - **FR-001**: The plugin MUST complete its start-up successfully when the `.py` extension is already claimed by another component.
 - **FR-002**: The plugin MUST NOT be disabled, nor report a load failure, as a result of a `.py` extension claim conflict.
 - **FR-003**: All start-up registrations that follow the `.py` extension claim — commands, ribbon action, file context-menu entries, and inline notebook embed handling — MUST be performed even when the claim fails.
-- **FR-004**: When the `.py` claim fails, the plugin MUST show the user a single visible warning that identifies the conflict and states how notebooks can still be opened.
+- **FR-004**: When the `.py` claim fails, the plugin MUST show the user a single visible warning that identifies the conflict and states how notebooks can still be opened. The warning MUST be emitted during start-up, at the point the claim fails, rather than being deferred until the workspace is ready. It MUST be emitted on every plugin load where the claim fails, and the plugin MUST NOT persist any state to suppress it.
 - **FR-005**: When the `.py` claim fails, the plugin MUST record the underlying failure detail in the developer console for diagnosis.
 - **FR-006**: The plugin MUST show no conflict warning when the `.py` claim succeeds or when the takeover preference is disabled.
 - **FR-007**: The plugin MUST preserve the existing behavior in non-conflicting environments: with the takeover preference enabled, `.py` files open in the marimo editor by default.
-- **FR-008**: The takeover preference description MUST state that another plugin claiming `.py` takes precedence and that a change to the preference applies after Obsidian reloads.
+- **FR-008**: The takeover preference description MUST state that another plugin claiming `.py` takes precedence and that a change to the preference applies after Obsidian reloads. This description is static: the preferences screen MUST NOT show a live conflict indicator, and the preference MUST remain user-editable even while a conflict is active.
 - **FR-009**: All user-visible and log text introduced by this feature MUST be defined as named constants rather than inline literals, per the project's constant-externalization rule.
 - **FR-010**: The regression test suite MUST cover a start-up in which the `.py` extension claim fails, asserting that start-up completes, that the subsequent registrations still occur, and that the user warning is issued exactly once.
 

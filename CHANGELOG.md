@@ -24,6 +24,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Fixed the plugin failing to load (and being force-disabled) when another
+  installed plugin already registered the `.py` file extension. The default-
+  editor claim is now best-effort: on conflict, marimo Bridge skips it, warns
+  once with how to still open a notebook (`Open in marimo` from the file menu
+  or command palette), and every other feature — commands, ribbon, context
+  menus, and `` ```marimo `` embeds — continues to work. (spec:
+  `030-fix-py-extension-conflict`)
 - Fixed run-mode server reference accounting for concurrent embeds. Matching
   embeds now share one startup while each owns an independent lease; the server
   stops only after the final embed unloads, including unload-during-startup.

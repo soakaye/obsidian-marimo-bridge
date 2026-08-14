@@ -131,7 +131,7 @@ back to the defaults configured in settings.
 | **Port** | `2718` | Port for the edit server. |
 | **Auto-start server on load** | `on` | Start the edit server when Obsidian launches. |
 | **Startup timeout (seconds)** | `30` | How long to wait for the server health check. |
-| **Open .py files in marimo by default** | `on` | Turn off to keep `.py` as plain text and open via command / menu. Takes effect after reloading the plugin. |
+| **Open .py files in marimo by default** | `on` | Turn off to keep `.py` as plain text and open via command / menu. If another plugin already handles `.py`, it takes precedence and marimo Bridge skips this. Takes effect after reloading the plugin. |
 | **Default embed mode / height** | `edit` / `600` | Defaults for ` ```marimo ` blocks. |
 | **Enable file explorer context menu** | `on` | Show the *Create new marimo notebook* item when right-clicking files and folders. |
 | **Open Markdown files in marimo** | `off` | Show *Open in marimo* when right-clicking `.md` files. |
