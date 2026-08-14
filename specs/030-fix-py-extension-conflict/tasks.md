@@ -120,7 +120,7 @@ Single project at the repository root: production code in `src/`, regression sui
 - [X] T015 [P] Add a `### Fixed` bullet under `## [Unreleased]` in `CHANGELOG.md` describing that the plugin no longer fails to load when another plugin has already registered the `.py` extension, following the existing entry style and ending with `(spec: 030-fix-py-extension-conflict)`
 - [X] T016 [P] Update the **Open .py files in marimo by default** row of the settings table in `README.md` (line 134) so it matches the amended description, noting that another plugin claiming `.py` takes precedence
 - [X] T017 Run the full gate at the repository root — `npm test`, `npm run build`, `npm run lint` — and confirm all three pass, including `tests/review-compliance.test.ts` (no `eslint-disable-next-line` may be introduced in `src/main.ts`)
-- [ ] T018 Execute the manual validation in [quickstart.md](./quickstart.md) sections 2 and 3 in an Obsidian test vault: confirm the plugin stays enabled with a competing `.py` owner, the notice and console warning appear once, *Open in marimo* / commands / ribbon / ` ```marimo ` embeds still work, and that with no competitor the `.py` open behavior and silent start-up match release 1.0.6 (SC-001, SC-002, SC-004)
+- [X] T018 Execute the manual validation in [quickstart.md](./quickstart.md) sections 2 and 3 in an Obsidian test vault: confirm the plugin stays enabled with a competing `.py` owner, the notice and console warning appear once, *Open in marimo* / commands / ribbon / ` ```marimo ` embeds still work, and that with no competitor the `.py` open behavior and silent start-up match release 1.0.6 (SC-001, SC-002, SC-004)
 
 ---
 
