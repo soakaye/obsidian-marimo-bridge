@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Plugin settings now appear in Obsidian's global settings search on
+  Obsidian 1.13 and later, via the new declarative settings API
+  (`getSettingDefinitions`). Every option is searchable by name or
+  description, opens ready to edit from a search result, and behaves exactly
+  as before — including live installation status, numeric validation, and
+  path trimming. Obsidian versions before 1.13 are unaffected: the plugin's
+  settings tab renders exactly as it does today. (spec:
+  `031-declarative-settings-api`)
 - Optional *Open in marimo* file-explorer context-menu entry for Markdown
   (`.md`) files. The new *Open Markdown files in marimo* setting is off by
   default and requires a compatible marimo Markdown integration such as

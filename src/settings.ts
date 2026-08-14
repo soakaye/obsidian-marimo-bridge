@@ -7,7 +7,13 @@
  *   3. marimo installation (status + install/upgrade button)
  *   ...then server, embedding, and behaviour options.
  */
-import { App, ButtonComponent, PluginSettingTab, Setting } from "obsidian";
+import {
+	App,
+	ButtonComponent,
+	PluginSettingTab,
+	Setting,
+	type SettingDefinitionItem,
+} from "obsidian";
 import type MarimoBridgePlugin from "./main";
 import {
 	DEFAULT_PORT,
@@ -66,11 +72,55 @@ import {
 	OFFSET_ONE,
 	MODE_EDIT,
 	MODE_RUN,
+	SETTINGS_KEY_MARIMO_PATH,
+	SETTINGS_KEY_PYTHON_PATH,
+	SETTINGS_KEY_UV_PATH,
+	SETTINGS_KEY_PORT,
+	SETTINGS_KEY_AUTO_START,
+	SETTINGS_KEY_STARTUP_TIMEOUT,
+	SETTINGS_KEY_TAKEOVER_PY_EXTENSION,
+	SETTINGS_KEY_DEFAULT_EMBED_MODE,
+	SETTINGS_KEY_DEFAULT_EMBED_HEIGHT,
+	SETTINGS_KEY_SHOW_CONTEXT_MENU,
+	SETTINGS_KEY_SHOW_MARKDOWN_CONTEXT_MENU,
+	SETTINGS_KEY_API_TOKEN,
+	CONTROL_TYPE_TEXT,
+	CONTROL_TYPE_NUMBER,
+	CONTROL_TYPE_TOGGLE,
+	CONTROL_TYPE_DROPDOWN,
+	SETTING_NUMBER_MIN,
+	VALIDATION_MSG_PORT_RANGE,
+	VALIDATION_MSG_POSITIVE_NUMBER,
 	formatVaultExecutablePath,
 	formatInstalledDescription,
 	formatBrokenEnvironmentHint,
 	formatNotInstalledDescription,
 } from "./constants";
+
+/**
+ * Type-predicate wrapper: an inline `typeof value === RUNTIME_CONSTANTS.TYPE_STRING`
+ * does not narrow `value` (TypeScript only narrows `typeof` checks against a
+ * literal or a variable with a literal type, not a property-access
+ * expression), matching the same pattern used in editor-view.ts's `isString`.
+ */
+function isString(value: unknown): value is string {
+	return typeof value === RUNTIME_CONSTANTS.TYPE_STRING;
+}
+
+/** Keys trimmed of surrounding whitespace before being persisted (FR-009). */
+const TRIMMED_SETTINGS_KEYS: readonly string[] = [
+	SETTINGS_KEY_MARIMO_PATH,
+	SETTINGS_KEY_PYTHON_PATH,
+	SETTINGS_KEY_UV_PATH,
+	SETTINGS_KEY_API_TOKEN,
+];
+
+/** Keys whose change re-triggers the installation-status check (FR-009). */
+const PATH_SETTINGS_KEYS: readonly string[] = [
+	SETTINGS_KEY_MARIMO_PATH,
+	SETTINGS_KEY_PYTHON_PATH,
+	SETTINGS_KEY_UV_PATH,
+];
 
 export interface MarimoBridgeSettings {
 	/** Path to the Python interpreter (used for install and `python -m marimo`). Empty => auto-detect under <vault>/.venv. */
@@ -117,9 +167,293 @@ export const DEFAULT_SETTINGS: MarimoBridgeSettings = {
 export class MarimoBridgeSettingTab extends PluginSettingTab {
 	plugin: MarimoBridgePlugin;
 
+	/**
+	 * The active installation-status row's own refresh function, set while
+	 * that row is mounted (see {@link buildInstallStatusRow}). `setControlValue`
+	 * calls this after a path option changes so the declarative presentation
+	 * re-checks installation exactly as the legacy `display()` handlers do.
+	 * `null` when no such row is currently rendered.
+	 */
+	private installStatusRefresh: (() => Promise<void>) | null = null;
+
 	constructor(app: App, plugin: MarimoBridgePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+	}
+
+	/**
+	 * Declarative settings API (Obsidian 1.13+). Returns every option as
+	 * structured data so the host can index it for global settings search.
+	 * `display()` below is untouched and is not called when this returns a
+	 * non-empty array (spec 031-declarative-settings-api, FR-005a).
+	 *
+	 * No control declares `defaultValue`: `loadSettings()` already merges
+	 * `DEFAULT_SETTINGS`, so a per-control default would be a second, unused
+	 * source of truth (FR-011a).
+	 */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		const isWin = process.platform === PLATFORM_WIN32;
+		const marimoExample = isWin
+			? formatVaultExecutablePath(DIR_SCRIPTS_WIN, EXE_MARIMO_WIN)
+			: formatVaultExecutablePath(DIR_SCRIPTS_UNIX, EXE_MARIMO_UNIX);
+		const pythonExample = isWin
+			? formatVaultExecutablePath(DIR_SCRIPTS_WIN, EXE_PYTHON_WIN)
+			: formatVaultExecutablePath(DIR_SCRIPTS_UNIX, EXE_PYTHON_UNIX);
+
+		return [
+			// 1. marimo executable path
+			{
+				name: SETTING_MARIMO_PATH_NAME,
+				desc: SETTING_MARIMO_PATH_DESC.replace(
+					RUNTIME_CONSTANTS.PLACEHOLDER_MARIMO_EXAMPLE,
+					marimoExample
+				),
+				control: {
+					type: CONTROL_TYPE_TEXT,
+					key: SETTINGS_KEY_MARIMO_PATH,
+					placeholder: PLACEHOLDER_AUTO_DETECT,
+				},
+			},
+			// 2. Python interpreter path
+			{
+				name: SETTING_PYTHON_PATH_NAME,
+				desc: SETTING_PYTHON_PATH_DESC.replace(
+					RUNTIME_CONSTANTS.PLACEHOLDER_PYTHON_EXAMPLE,
+					pythonExample
+				),
+				control: {
+					type: CONTROL_TYPE_TEXT,
+					key: SETTINGS_KEY_PYTHON_PATH,
+					placeholder: PLACEHOLDER_AUTO_DETECT,
+				},
+			},
+			// 3. uv command path
+			{
+				name: SETTING_UV_PATH_NAME,
+				desc: SETTING_UV_PATH_DESC,
+				control: {
+					type: CONTROL_TYPE_TEXT,
+					key: SETTINGS_KEY_UV_PATH,
+					placeholder: PLACEHOLDER_AUTO_DETECT,
+				},
+			},
+			// 4. marimo installation status / installer (live, non-persisted)
+			this.buildInstallStatusRow(),
+			// 5. Port
+			{
+				name: SETTING_PORT_NAME,
+				desc: SETTING_PORT_DESC,
+				control: {
+					type: CONTROL_TYPE_NUMBER,
+					key: SETTINGS_KEY_PORT,
+					min: SETTING_NUMBER_MIN,
+					max: PORT_MAX,
+					validate: (value) =>
+						value < SETTING_NUMBER_MIN || value > PORT_MAX
+							? VALIDATION_MSG_PORT_RANGE
+							: undefined,
+				},
+			},
+			// 6. Auto-start server on load
+			{
+				name: SETTING_AUTO_START_NAME,
+				desc: SETTING_AUTO_START_DESC,
+				control: {
+					type: CONTROL_TYPE_TOGGLE,
+					key: SETTINGS_KEY_AUTO_START,
+				},
+			},
+			// 7. Startup timeout (seconds) — no description in the legacy path
+			{
+				name: SETTING_TIMEOUT_NAME,
+				control: {
+					type: CONTROL_TYPE_NUMBER,
+					key: SETTINGS_KEY_STARTUP_TIMEOUT,
+					min: SETTING_NUMBER_MIN,
+					validate: (value) =>
+						value < SETTING_NUMBER_MIN
+							? VALIDATION_MSG_POSITIVE_NUMBER
+							: undefined,
+				},
+			},
+			// 8. Open .py files in marimo by default
+			{
+				name: SETTING_TAKEOVER_NAME,
+				desc: SETTING_TAKEOVER_DESC,
+				control: {
+					type: CONTROL_TYPE_TOGGLE,
+					key: SETTINGS_KEY_TAKEOVER_PY_EXTENSION,
+				},
+			},
+			// 9. Default embed mode
+			{
+				name: SETTING_EMBED_MODE_NAME,
+				desc: SETTING_EMBED_MODE_DESC,
+				control: {
+					type: CONTROL_TYPE_DROPDOWN,
+					key: SETTINGS_KEY_DEFAULT_EMBED_MODE,
+					options: {
+						[MODE_EDIT]: TEXT_EMBED_MODE_EDIT,
+						[MODE_RUN]: TEXT_EMBED_MODE_RUN,
+					},
+				},
+			},
+			// 10. Default embed height (px) — no description in the legacy path
+			{
+				name: SETTING_EMBED_HEIGHT_NAME,
+				control: {
+					type: CONTROL_TYPE_NUMBER,
+					key: SETTINGS_KEY_DEFAULT_EMBED_HEIGHT,
+					min: SETTING_NUMBER_MIN,
+					validate: (value) =>
+						value < SETTING_NUMBER_MIN
+							? VALIDATION_MSG_POSITIVE_NUMBER
+							: undefined,
+				},
+			},
+			// 11. Enable file explorer context menu
+			{
+				name: SETTING_CONTEXT_MENU_NAME,
+				desc: SETTING_CONTEXT_MENU_DESC,
+				control: {
+					type: CONTROL_TYPE_TOGGLE,
+					key: SETTINGS_KEY_SHOW_CONTEXT_MENU,
+				},
+			},
+			// 12. Open Markdown files in marimo
+			{
+				name: SETTING_MD_CONTEXT_MENU_NAME,
+				desc: SETTING_MD_CONTEXT_MENU_DESC,
+				control: {
+					type: CONTROL_TYPE_TOGGLE,
+					key: SETTINGS_KEY_SHOW_MARKDOWN_CONTEXT_MENU,
+				},
+			},
+			// 13. API token
+			{
+				name: SETTING_API_TOKEN_NAME,
+				desc: SETTING_API_TOKEN_DESC,
+				control: {
+					type: CONTROL_TYPE_TEXT,
+					key: SETTINGS_KEY_API_TOKEN,
+					placeholder: SETTING_API_TOKEN_WARN,
+				},
+			},
+		];
+	}
+
+	/**
+	 * Row 4: a live, non-persisted status (detected marimo version, or a
+	 * not-installed state) with an install/upgrade button. Declares `desc`
+	 * with the same "checking" text `display()` passes to `setDesc()` so the
+	 * row still has an indexed description (contracts C5) — a render-only
+	 * definition would leave it with none. The render callback ports
+	 * `display()`'s `refreshInstallStatus` logic and returns a cleanup
+	 * function so an in-flight check cannot write into a torn-down row
+	 * (FR-010).
+	 */
+	private buildInstallStatusRow(): SettingDefinitionItem {
+		return {
+			name: SETTING_MARIMO_INSTALL_NAME,
+			desc: TEXT_CHECKING,
+			render: (setting) => {
+				// The flag is only ever set by the cleanup function returned
+				// below — a sibling closure `refresh`'s own control flow can't
+				// see. TypeScript's narrowing doesn't model that concurrent
+				// mutation and would treat a direct read as permanently
+				// `false` inside `refresh` (flagging every guard below as
+				// dead code); routing the read through a function call
+				// defeats that over-narrowing.
+				const lifecycle = { disposed: false };
+				const isDisposed = (): boolean => lifecycle.disposed;
+				let installButton: ButtonComponent | null = null;
+
+				const refresh = async (): Promise<void> => {
+					if (isDisposed()) return;
+					setting.setDesc(TEXT_CHECKING);
+					installButton?.setDisabled(true);
+					const version = await this.plugin.servers.getMarimoPackageVersion();
+					if (isDisposed()) return;
+					if (version) {
+						setting.setDesc(
+							formatInstalledDescription(
+								version,
+								this.plugin.servers.resolvePython()
+							)
+						);
+						installButton
+							?.setButtonText(TEXT_REINSTALL)
+							.setDisabled(false);
+					} else {
+						const brokenHint = this.plugin.servers.vaultVenvBroken()
+							? formatBrokenEnvironmentHint(TEXT_VENV_BROKEN_HINT)
+							: "";
+						const installTarget =
+							await this.plugin.servers.describeMarimoInstallTarget();
+						if (isDisposed()) return;
+						setting.setDesc(
+							formatNotInstalledDescription(
+								brokenHint,
+								installTarget
+							)
+						);
+						installButton
+							?.setButtonText(TEXT_INSTALL)
+							.setDisabled(false);
+					}
+				};
+
+				setting.addButton((btn) => {
+					installButton = btn;
+					btn.setButtonText(TEXT_INSTALL)
+						.setCta()
+						.setDisabled(true)
+						.onClick(async () => {
+							btn.setButtonText(TEXT_INSTALLING).setDisabled(true);
+							await this.plugin.servers.installMarimo();
+							await refresh();
+						});
+				});
+
+				this.installStatusRefresh = refresh;
+				void refresh();
+
+				return () => {
+					lifecycle.disposed = true;
+					if (this.installStatusRefresh === refresh) {
+						this.installStatusRefresh = null;
+					}
+				};
+			},
+		};
+	}
+
+	/** Reads from `plugin.settings`, keyed by the persisted setting key. */
+	getControlValue(key: string): unknown {
+		return (this.plugin.settings as unknown as Record<string, unknown>)[
+			key
+		];
+	}
+
+	/**
+	 * Persists a control's new value through the plugin's own save path
+	 * (`saveSettings()`, not the framework default) so side effects like
+	 * `invalidateAvailability()` still run (contracts C2/C3, FR-006).
+	 * Trims the four text-ish keys the legacy path trims (FR-009) — `validate`
+	 * cannot transform a value, only reject it, so trimming has to live here.
+	 * Re-checks installation status only for the three path keys.
+	 */
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const resolved =
+			TRIMMED_SETTINGS_KEYS.includes(key) && isString(value)
+				? value.trim()
+				: value;
+		(this.plugin.settings as unknown as Record<string, unknown>)[key] =
+			resolved;
+		await this.plugin.saveSettings();
+		if (PATH_SETTINGS_KEYS.includes(key)) {
+			await this.installStatusRefresh?.();
+		}
 	}
 
 	display(): void {
