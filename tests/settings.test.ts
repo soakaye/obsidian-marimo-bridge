@@ -9,8 +9,14 @@ import {
 import {
 	SETTING_MARIMO_INSTALL_NAME,
 	SETTING_PYTHON_PATH_NAME,
+	SETTING_TAKEOVER_DESC,
 	SETTING_UV_PATH_NAME,
 } from "../src/constants";
+
+test("describes the .py takeover as skippable by a competing plugin and reload-gated (FR-008)", () => {
+	assert.match(SETTING_TAKEOVER_DESC, /takes precedence/i);
+	assert.match(SETTING_TAKEOVER_DESC, /reloading the plugin/i);
+});
 
 test("does not expose a configurable server host", () => {
 	assert.equal(

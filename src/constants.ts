@@ -325,7 +325,7 @@ export const SETTING_PYTHON_PATH_DESC = "Absolute path to the Python interpreter
 export const SETTING_UV_PATH_DESC = "Absolute path to uv. Leave empty to search PATH and common uv install locations.";
 export const SETTING_PORT_DESC = "Port for the marimo edit server.";
 export const SETTING_AUTO_START_DESC = "Launch the marimo edit server when Obsidian starts.";
-export const SETTING_TAKEOVER_DESC = "When on, clicking a .py file opens the marimo editor. Turn off to keep .py as plain text and use the command / context menu instead. Change takes effect after reloading the plugin.";
+export const SETTING_TAKEOVER_DESC = "When on, clicking a .py file opens the marimo editor. If another plugin already handles .py, it takes precedence and marimo Bridge skips this. Turn off to keep .py as plain text and use the command / context menu instead. Change takes effect after reloading the plugin.";
 export const SETTING_EMBED_MODE_DESC = "Mode for ```marimo blocks when not specified.";
 export const SETTING_CONTEXT_MENU_DESC = "When enabled, right-clicking files and folders in the file explorer shows the 'create new marimo notebook' option.";
 export const SETTING_MD_CONTEXT_MENU_DESC = "When enabled, right-clicking a Markdown (.md) file in the file explorer shows an 'Open in marimo' option. Requires a marimo Markdown integration (e.g. mkdocs-marimo or quarto-marimo) installed in your marimo environment for the file to open as a notebook.";
@@ -367,6 +367,7 @@ export const RUNTIME_CONSTANTS = {
 	FILE_UNTITLED_MARIMO: "untitled_marimo.py",
 	FILE_UNTITLED_MARIMO_PREFIX: "untitled_marimo_",
 	NOTICE_LOCAL_VAULT_REQUIRED: "Marimo bridge requires a local vault (desktop). Disabling.",
+	NOTICE_PY_EXTENSION_CONFLICT: "Marimo bridge: another plugin already handles .py files, so it did not become the default editor. Use right-click → \"Open in marimo\" or the command palette to open notebooks.",
 	NOTICE_RESTARTING_SERVER: "Restarting marimo server…",
 	NOTICE_MARIMO_NOT_INSTALLED: "Marimo bridge: marimo is not installed, so the server was not started. Install it from the plugin settings.",
 	NOTICE_INSTALLING_MARIMO: "Installing marimo… this may take a minute.",
@@ -374,6 +375,7 @@ export const RUNTIME_CONSTANTS = {
 	NOTICE_PORT_CONFLICT_SUFFIX: " is already in use and could not be released. Change the marimo bridge port or stop that process manually.",
 	TITLE_OPEN_IN_MARIMO: "Open in marimo",
 	TEXT_STARTING_SERVER: "Starting marimo server...",
+	LOG_PY_EXTENSION_CONFLICT: "[MarimoBridge] Could not claim .py as the default editor (another plugin already owns it):",
 	LOG_RENDER_ERROR: "[MarimoBridge] render error:",
 	LOG_UNSAFE_PROTOCOL: "[MarimoBridge] Blocked external navigation to unsafe protocol:",
 	LOG_LINK_PARSE_FAILED: "Failed to parse link URL:",
