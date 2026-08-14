@@ -335,6 +335,37 @@ export const TEXT_NOT_INSTALLED_ERROR = "Marimo is not installed. Install it fro
 export const TEXT_VENV_BROKEN_ERROR = "The vault's marimo virtual environment (.venv) is broken: its Python interpreter is missing (often after a Homebrew/pyenv upgrade). Recreate .venv and reinstall marimo, or set a marimo path in settings.";
 export const TEXT_VENV_BROKEN_HINT = "The existing .venv is broken (its Python is missing); it will be bypassed.";
 
+// Declarative settings API (Obsidian 1.13+, getSettingDefinitions()).
+// Persisted settings keys, passed back via getControlValue/setControlValue.
+export const SETTINGS_KEY_MARIMO_PATH = "marimoPath";
+export const SETTINGS_KEY_PYTHON_PATH = "pythonPath";
+export const SETTINGS_KEY_UV_PATH = "uvPath";
+export const SETTINGS_KEY_PORT = "port";
+export const SETTINGS_KEY_AUTO_START = "autoStart";
+export const SETTINGS_KEY_STARTUP_TIMEOUT = "startupTimeout";
+export const SETTINGS_KEY_TAKEOVER_PY_EXTENSION = "takeOverPyExtension";
+export const SETTINGS_KEY_DEFAULT_EMBED_MODE = "defaultEmbedMode";
+export const SETTINGS_KEY_DEFAULT_EMBED_HEIGHT = "defaultEmbedHeight";
+export const SETTINGS_KEY_SHOW_CONTEXT_MENU = "showContextMenu";
+export const SETTINGS_KEY_SHOW_MARKDOWN_CONTEXT_MENU = "showMarkdownContextMenu";
+export const SETTINGS_KEY_API_TOKEN = "apiToken";
+// SettingControl `type` discriminators. Plain `export const` (not inside
+// RUNTIME_CONSTANTS' `as const` object) so their literal string types survive
+// and the SettingControl union still narrows, matching the MODE_EDIT/MODE_RUN
+// pattern above. The row-4 render definition needs no discriminator of its
+// own — it is identified by carrying a `render` property.
+export const CONTROL_TYPE_TEXT = "text";
+export const CONTROL_TYPE_NUMBER = "number";
+export const CONTROL_TYPE_TOGGLE = "toggle";
+export const CONTROL_TYPE_DROPDOWN = "dropdown";
+// Numeric bounds for the three validated number controls. `min` is 1 for all
+// three (port, startup timeout, embed height); `port` alone has an upper
+// bound, reusing the existing PORT_MAX.
+export const SETTING_NUMBER_MIN = OFFSET_ONE;
+// Inline validation messages shown when a number control rejects a value.
+export const VALIDATION_MSG_PORT_RANGE = `Enter a port between ${SETTING_NUMBER_MIN.toString()} and ${PORT_MAX.toString()}.`;
+export const VALIDATION_MSG_POSITIVE_NUMBER = "Enter a number greater than 0.";
+
 // Remaining runtime literals centralized for Constitution Principle VI.
 export const RUNTIME_CONSTANTS = {
 	SLASH: "/",

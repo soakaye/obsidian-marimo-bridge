@@ -287,6 +287,10 @@ export function createMarimoWebview(
 	// the element is already in the document is silently ignored. So we set all
 	// attributes and wire every event listener first, then append at the very
 	// end of this function.
+	//
+	// Deliberately `document.createElement`, not Obsidian's `createEl`/
+	// `createDiv` helpers: those append the new element to their receiver
+	// immediately, which is exactly the ordering this function must avoid.
 	const el = parent.ownerDocument.createElement(
 		RUNTIME_CONSTANTS.TAG_WEBVIEW as keyof HTMLElementTagNameMap
 	) as unknown as MarimoWebviewElement;
