@@ -43,3 +43,4 @@ venv/
 
 temp/
 .marimo-servers.json
+.orca/
