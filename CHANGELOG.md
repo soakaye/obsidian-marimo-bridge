@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Configurable default notebook mode for tabs. Users can now choose whether
+  notebooks open in Edit mode (default) or Run mode (app view) via the new
+  *Default notebook mode* setting. Active notebook tabs can also be toggled
+  between modes in-place using the tab header button or the
+  `Toggle notebook mode between edit and run` command. (spec:
+  `032-notebook-tab-mode`, closes #5)
 - Plugin settings now appear in Obsidian's global settings search on
   Obsidian 1.13 and later, via the new declarative settings API
   (`getSettingDefinitions`). Every option is searchable by name or
