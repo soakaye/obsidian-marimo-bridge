@@ -1,0 +1,4 @@
+# .worktreeinclude (repo root)
+.env
+.env.local
+.vscode/settings.json
