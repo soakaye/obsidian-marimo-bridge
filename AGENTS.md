@@ -26,7 +26,7 @@ npm run lint    # eslint (flat config, eslint-plugin-obsidianmd)
 ## Conventions
 
 - Tabs for indentation (see `.editorconfig`).
-- Language Policy: Project artifacts (specifications, plans, tasks, code) and Git commit messages MUST be written in English. Communication with the user MUST be written in Japanese.
+- Language Policy: Project artifacts (specifications, plans, tasks, code) and Git commit messages MUST be written in English. Communication with the user MUST use the natural language appropriate for the agent's operating environment and user instructions or prompts (e.g., using Japanese in Japanese conversational contexts, while adapting naturally to English or other languages specified by the environment or prompt).
 - Keep all Node/Electron/Obsidian modules in the esbuild `external` list.
 - Desktop-only APIs (`child_process`, `fs`, `<webview>`) are expected; do not
   add mobile support without replacing those.
