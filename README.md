@@ -18,8 +18,9 @@ notes. Edits are written straight back to the real `.py` file on disk.
 
 ## Features
 
-- **Full notebook editing** — open a `.py` notebook in a dedicated tab with
-  marimo's reactive editor. Saves go straight to the file.
+- **Full notebook editing & app view** — open a `.py` notebook in a dedicated tab with
+  either marimo's reactive editor (`edit` mode) or an interactive read-only
+  dashboard (`run` mode). Quickly toggle between modes in-place from the tab header.
 - **Optional Markdown notebook support** — add *Open in marimo* to the
   right-click menu for `.md` files.
 - **Inline embeds** — drop a notebook into any note with a ` ```marimo ` block,
@@ -83,11 +84,12 @@ it updated from GitHub releases.
 
 ## Usage
 
-### Open / create notebooks
+### Open / create notebooks & toggle mode
 
-- **Click a `.py` file** — opens it in the marimo editor (when *Open .py files
-  in marimo by default* is enabled).
+- **Click a `.py` file** — opens it in the marimo editor or app view (depending on your default notebook mode setting).
+- **Tab header mode toggle** — click the mode button (play / edit icon) on the active notebook tab header to toggle between Edit and Run mode in-place.
 - **Command palette**
+  - `Toggle notebook mode between edit and run` — switches the active notebook tab between Edit and Run modes.
   - `Open active .py file in marimo`
   - `Open marimo home` — a browser of the notebooks in your vault.
   - `Create new marimo notebook` — scaffolds a minimal notebook and opens it.
@@ -127,11 +129,13 @@ back to the defaults configured in settings.
 |---|---|---|
 | **marimo executable path** | *(auto-detect)* | Absolute path to `marimo` (e.g. `.venv/Scripts/marimo.exe` on Windows or `.venv/bin/marimo` on macOS/Linux). |
 | **Python interpreter path** | *(auto-detect)* | Interpreter used for installing marimo and running `python -m marimo`. |
+| **uv executable path** | *(auto-detect)* | Absolute path to `uv`. Leave empty to search default installation locations and PATH. |
 | **marimo installation** | — | Shows the detected version (or "Not installed") and an install / upgrade button. |
 | **Port** | `2718` | Port for the edit server. |
 | **Auto-start server on load** | `on` | Start the edit server when Obsidian launches. |
 | **Startup timeout (seconds)** | `30` | How long to wait for the server health check. |
 | **Open .py files in marimo by default** | `on` | Turn off to keep `.py` as plain text and open via command / menu. If another plugin already handles `.py`, it takes precedence and marimo Bridge skips this. Takes effect after reloading the plugin. |
+| **Default notebook mode** | `Edit mode` | Mode used when opening notebooks in their own tab (`Edit mode (full editor)` or `Run mode (app view)`). |
 | **Default embed mode / height** | `edit` / `600` | Defaults for ` ```marimo ` blocks. |
 | **Enable file explorer context menu** | `on` | Show the *Create new marimo notebook* item when right-clicking files and folders. |
 | **Open Markdown files in marimo** | `off` | Show *Open in marimo* when right-clicking `.md` files. |
@@ -173,10 +177,11 @@ src/main.ts            MarimoBridgePlugin — wiring, commands, lifecycle
    `http://127.0.0.1:<port>/?file=<relative-path>&access_token=<token>` in a
    `<webview>`. The marimo server reads and writes the real file, so edits
    persist with no extra file handling in the plugin.
-3. `run`-mode embeds get a separate, lazily started `marimo run` server.
-4. A pre-existing server on the port is reused only if it accepts the active
-   token; an incompatible or foreign listener is evicted and replaced. If the
-   port cannot be released, startup stops without spawning a conflicting server.
+3. Tabs opened in `run` mode and `run`-mode embeds get a separate, lazily started
+   `marimo run` server.
+4. A pre-existing server on the port is reused only if it positively belongs to
+   the current vault (confirmed by crash-recovery records); an unconfirmed or
+   foreign server is never terminated, and the plugin falls back to a free port.
 5. On exit the spawned servers are signalled synchronously; on the next launch
    any record left behind is reconciled (terminated only when confirmed alive
    and ours).
