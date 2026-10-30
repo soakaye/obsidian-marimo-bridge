@@ -7,7 +7,7 @@
  * All editing/state lives in the marimo server, which persists to the real
  * `.py` file.
  */
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, WorkspaceLeaf, setIcon, setTooltip } from "obsidian";
 import type MarimoBridgePlugin from "./main";
 import { getFilePathFromUrl } from "./url-utils";
 import {
@@ -62,6 +62,15 @@ import {
 	TEXT_MARIMO,
 	TEXT_LOADING_MARIMO,
 	REDIRECT_URL_KEY,
+	MODE_EDIT,
+	MODE_RUN,
+	ICON_PLAY,
+	ICON_EDIT,
+	ACTION_SWITCH_TO_RUN,
+	ACTION_SWITCH_TO_EDIT,
+	ATTR_ARIA_LABEL,
+	STYLE_DISPLAY_NONE,
+	STYLE_DISPLAY_EMPTY,
 	TEXT_WEBVIEW_LOAD_FAILED,
 	RUNTIME_CONSTANTS,
 	formatClassSelector,
@@ -71,8 +80,9 @@ import {
 } from "./constants";
 
 /** Persisted view state. `file` undefined → the marimo home page. */
-interface MarimoViewState {
+export interface MarimoViewState {
 	file?: string;
+	mode?: typeof MODE_EDIT | typeof MODE_RUN;
 }
 
 interface ElectronModule {
@@ -133,6 +143,10 @@ function isBridgeOpenMessage(value: unknown): value is BridgeOpenMessage {
 export class MarimoEditorView extends ItemView {
 	private plugin: MarimoBridgePlugin;
 	private currentFile: string | undefined;
+	private currentMode: typeof MODE_EDIT | typeof MODE_RUN = MODE_EDIT;
+	private acquiredRunServerFile: string | null = null;
+	private currentRunUrl: string | null = null;
+	private modeActionEl: HTMLElement | null = null;
 	private webview: HTMLElement | null = null;
 	private activeRenderPromise: Promise<void> = Promise.resolve();
 
@@ -141,6 +155,20 @@ export class MarimoEditorView extends ItemView {
 		this.plugin = plugin;
 		// Show forward/back navigation chrome on the leaf.
 		this.navigation = true;
+		this.modeActionEl = this.addAction(
+			ICON_PLAY,
+			ACTION_SWITCH_TO_RUN,
+			() => void this.toggleMode()
+		);
+		this.updateModeAction();
+	}
+
+	getCurrentFile(): string | undefined {
+		return this.currentFile;
+	}
+
+	getCurrentMode(): typeof MODE_EDIT | typeof MODE_RUN {
+		return this.currentMode;
 	}
 
 	getViewType(): string {
@@ -163,16 +191,27 @@ export class MarimoEditorView extends ItemView {
 	 */
 	async setState(state: MarimoViewState, result: unknown): Promise<void> {
 		const newFile = state.file;
+		const resolvedMode = !newFile
+			? MODE_EDIT
+			: state.mode === MODE_EDIT || state.mode === MODE_RUN
+				? state.mode
+				: this.plugin.settings.defaultNotebookMode;
 		const fileChanged = newFile !== this.currentFile;
+		const modeChanged = resolvedMode !== this.currentMode;
 		this.currentFile = newFile;
+		this.currentMode = resolvedMode;
 		await super.setState(state, result as never);
-		if (fileChanged || !this.webview) {
+		this.updateModeAction();
+		if (fileChanged || modeChanged || !this.webview) {
 			await this.render();
 		}
 	}
 
 	getState(): Record<string, unknown> {
-		return { file: this.currentFile };
+		return {
+			file: this.currentFile,
+			mode: this.currentMode,
+		};
 	}
 
 	async onOpen(): Promise<void> {
@@ -180,8 +219,41 @@ export class MarimoEditorView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		if (this.acquiredRunServerFile) {
+			const fileToRelease = this.acquiredRunServerFile;
+			this.acquiredRunServerFile = null;
+			this.currentRunUrl = null;
+			await this.plugin.servers.releaseRunServer(fileToRelease);
+		}
 		this.contentEl.empty();
 		this.webview = null;
+	}
+
+	async toggleMode(): Promise<void> {
+		if (!this.currentFile) return;
+		const nextMode = this.currentMode === MODE_EDIT ? MODE_RUN : MODE_EDIT;
+		await this.leaf.setViewState({
+			type: VIEW_TYPE_MARIMO,
+			state: {
+				file: this.currentFile,
+				mode: nextMode,
+			},
+		});
+	}
+
+	private updateModeAction(): void {
+		if (!this.modeActionEl) return;
+		if (!this.currentFile) {
+			this.modeActionEl.style.display = STYLE_DISPLAY_NONE;
+			return;
+		}
+		this.modeActionEl.style.display = STYLE_DISPLAY_EMPTY;
+		const isEdit = this.currentMode === MODE_EDIT;
+		const icon = isEdit ? ICON_PLAY : ICON_EDIT;
+		const title = isEdit ? ACTION_SWITCH_TO_RUN : ACTION_SWITCH_TO_EDIT;
+		setIcon(this.modeActionEl, icon);
+		setTooltip(this.modeActionEl, title);
+		this.modeActionEl.setAttribute(ATTR_ARIA_LABEL, title);
 	}
 
 	/** Ensure the edit server is up, then render its UI in a webview. */
@@ -208,21 +280,57 @@ export class MarimoEditorView extends ItemView {
 			text: RUNTIME_CONSTANTS.TEXT_STARTING_SERVER,
 		});
 
-		const ok = await this.plugin.servers.ensureEditServer();
-		if (!ok) {
-			container.empty();
-			this.webview = null;
-			container.createDiv({
-				cls: CLS_LOADING,
-				text: TEXT_WEBVIEW_LOAD_FAILED,
-			});
-			return;
-		}
+		let url: string;
 
-		// Render the WebView using the latest file path resolved after startup
-		const url = this.currentFile
-			? this.plugin.servers.editFileUrl(this.currentFile)
-			: this.plugin.servers.editHomeUrl();
+		if (this.currentMode === MODE_RUN && this.currentFile) {
+			if (this.acquiredRunServerFile && this.acquiredRunServerFile !== this.currentFile) {
+				const oldFile = this.acquiredRunServerFile;
+				this.acquiredRunServerFile = null;
+				this.currentRunUrl = null;
+				await this.plugin.servers.releaseRunServer(oldFile);
+			}
+
+			if (!this.acquiredRunServerFile) {
+				const runUrl = await this.plugin.servers.ensureRunServer(this.currentFile);
+				if (!runUrl) {
+					container.empty();
+					this.webview = null;
+					container.createDiv({
+						cls: CLS_LOADING,
+						text: TEXT_WEBVIEW_LOAD_FAILED,
+					});
+					return;
+				}
+				this.acquiredRunServerFile = this.currentFile;
+				this.currentRunUrl = runUrl;
+			}
+			if (!this.currentRunUrl) {
+				return;
+			}
+			url = this.currentRunUrl;
+		} else {
+			if (this.acquiredRunServerFile) {
+				const oldFile = this.acquiredRunServerFile;
+				this.acquiredRunServerFile = null;
+				this.currentRunUrl = null;
+				await this.plugin.servers.releaseRunServer(oldFile);
+			}
+
+			const ok = await this.plugin.servers.ensureEditServer();
+			if (!ok) {
+				container.empty();
+				this.webview = null;
+				container.createDiv({
+					cls: CLS_LOADING,
+					text: TEXT_WEBVIEW_LOAD_FAILED,
+					});
+				return;
+			}
+
+			url = this.currentFile
+				? this.plugin.servers.editFileUrl(this.currentFile)
+				: this.plugin.servers.editHomeUrl();
+		}
 
 		const partitionName = `${PARTITION_PREFIX}${RUNTIME_CONSTANTS.PARTITION_SHARED}`;
 
@@ -231,7 +339,7 @@ export class MarimoEditorView extends ItemView {
 				this.currentFile = newFile;
 				void this.leaf.setViewState({
 					type: VIEW_TYPE_MARIMO,
-					state: { file: newFile }
+					state: { file: newFile, mode: this.currentMode }
 				});
 			}
 		};

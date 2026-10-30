@@ -48,6 +48,8 @@ import {
 	CMD_CREATE_NOTEBOOK_NAME,
 	CMD_RESTART_SERVER_ID,
 	CMD_RESTART_SERVER_NAME,
+	CMD_TOGGLE_NOTEBOOK_MODE_ID,
+	CMD_TOGGLE_NOTEBOOK_MODE_NAME,
 	NOTICE_TIMEOUT_MS,
 	FILE_SERVER_RECORDS,
 	MAX_NOTEBOOK_NAME_ATTEMPTS,
@@ -163,6 +165,20 @@ export default class MarimoBridgePlugin extends Plugin {
 			id: CMD_CREATE_NOTEBOOK_ID,
 			name: CMD_CREATE_NOTEBOOK_NAME,
 			callback: () => void this.createNotebook(),
+		});
+
+		this.addCommand({
+			id: CMD_TOGGLE_NOTEBOOK_MODE_ID,
+			name: CMD_TOGGLE_NOTEBOOK_MODE_NAME,
+			checkCallback: (checking) => {
+				const activeView = this.app.workspace.getActiveViewOfType(MarimoEditorView);
+				if (!activeView?.getCurrentFile()) {
+					return false;
+				}
+				if (checking) return true;
+				void activeView.toggleMode();
+				return true;
+			},
 		});
 
 		this.addCommand({

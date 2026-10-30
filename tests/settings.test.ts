@@ -17,6 +17,8 @@ import {
 	SETTING_AUTO_START_NAME,
 	SETTING_TIMEOUT_NAME,
 	SETTING_TAKEOVER_NAME,
+	SETTING_NOTEBOOK_MODE_NAME,
+	SETTINGS_KEY_DEFAULT_NOTEBOOK_MODE,
 	SETTING_TAKEOVER_DESC,
 	SETTING_EMBED_MODE_NAME,
 	SETTING_EMBED_HEIGHT_NAME,
@@ -273,6 +275,7 @@ test("getSettingDefinitions() describes all 13 rows in display() order with matc
 		{ name: SETTING_AUTO_START_NAME, kind: "toggle", key: SETTINGS_KEY_AUTO_START, hasDesc: true },
 		{ name: SETTING_TIMEOUT_NAME, kind: "number", key: SETTINGS_KEY_STARTUP_TIMEOUT, hasDesc: false },
 		{ name: SETTING_TAKEOVER_NAME, kind: "toggle", key: "takeOverPyExtension", hasDesc: true },
+		{ name: SETTING_NOTEBOOK_MODE_NAME, kind: "dropdown", key: SETTINGS_KEY_DEFAULT_NOTEBOOK_MODE, hasDesc: true },
 		{ name: SETTING_EMBED_MODE_NAME, kind: "dropdown", key: "defaultEmbedMode", hasDesc: true },
 		{ name: SETTING_EMBED_HEIGHT_NAME, kind: "number", key: "defaultEmbedHeight", hasDesc: false },
 		{ name: SETTING_CONTEXT_MENU_NAME, kind: "toggle", key: "showContextMenu", hasDesc: true },
@@ -322,6 +325,7 @@ test("DEFAULT_SETTINGS is unchanged by this feature (FR-011, SC-004, INV-1)", ()
 		autoStart: true,
 		startupTimeout: 30,
 		takeOverPyExtension: true,
+		defaultNotebookMode: "edit",
 		defaultEmbedMode: "edit",
 		defaultEmbedHeight: 600,
 		showContextMenu: true,
@@ -447,4 +451,20 @@ test("row 4's render callback re-checks installation on a path-key save, not on 
 	await tab.setControlValue(SETTINGS_KEY_MARIMO_PATH, "/y");
 	await flushMicrotasks();
 	assert.equal(versionCalls(), 2);
+});
+
+test("defaultNotebookMode defaults to edit and can be updated via setControlValue", async () => {
+	const { plugin } = makeServerlessPlugin();
+	const tab = new MarimoBridgeSettingTab({} as never, plugin);
+	const defs = tab.getSettingDefinitions() as unknown as TestSettingRow[];
+	const notebookModeRow = defs.find((r) => r.name === SETTING_NOTEBOOK_MODE_NAME);
+
+	assert.ok(notebookModeRow);
+	assert.ok(notebookModeRow.control);
+	assert.equal(notebookModeRow.control.type, "dropdown");
+	assert.equal(notebookModeRow.control.key, SETTINGS_KEY_DEFAULT_NOTEBOOK_MODE);
+	assert.equal(plugin.settings.defaultNotebookMode, "edit");
+
+	await tab.setControlValue(SETTINGS_KEY_DEFAULT_NOTEBOOK_MODE, "run");
+	assert.equal(plugin.settings.defaultNotebookMode, "run");
 });

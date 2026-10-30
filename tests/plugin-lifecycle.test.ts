@@ -225,6 +225,7 @@ function makeOnloadHarness(options: {
 		vault: { adapter: new TempVaultAdapter(vaultDir) },
 		workspace: {
 			getActiveFile: () => null,
+			getActiveViewOfType: () => null,
 			on: () => ({}),
 			onLayoutReady: (cb: () => void | Promise<void>) => {
 				layoutReadyCallbacks.push(cb);
@@ -334,7 +335,7 @@ test("onload() survives a .py extension claim conflict and completes every other
 				1
 			);
 			assert.equal(harness.addRibbonIconCalls.length, 1);
-			assert.equal(harness.commands.length, 4);
+			assert.equal(harness.commands.length, 5);
 			assert.equal(harness.registerEventCalls.length, 2);
 			assert.deepEqual(
 				harness.registerDomEventCalls.map((c) => c.type),
@@ -463,5 +464,40 @@ test("onload() skips the .py claim and stays silent when the takeover preference
 			assert.deepEqual(getNoticeMessages(), []);
 			assert.equal(warnings.length, 0);
 		});
+	});
+});
+
+test("registers toggle-notebook-mode command with checkCallback checking active leaf (US2, FR-007)", async () => {
+	await withFakeWindow(async () => {
+		const harness = makeOnloadHarness();
+		await harness.plugin.onload();
+
+		const toggleCmd = harness.commands.find((c) => c.id === "toggle-notebook-mode");
+		assert.ok(toggleCmd);
+		assert.equal(typeof toggleCmd.checkCallback, "function");
+		const checkCallback = toggleCmd.checkCallback;
+		assert.ok(checkCallback);
+
+		// When active view is not MarimoEditorView, checkCallback returns false
+		let activeView: unknown = null;
+		(harness.plugin.app as { workspace: { getActiveViewOfType: unknown } }).workspace.getActiveViewOfType = () => activeView;
+		assert.equal(checkCallback(true), false);
+
+		// When active view has no current file, returns false
+		let toggled = false;
+		activeView = {
+			getCurrentFile: () => undefined,
+			toggleMode: () => { toggled = true; },
+		};
+		assert.equal(checkCallback(true), false);
+
+		// When active view has a file, checking returns true and execution calls toggleMode
+		activeView = {
+			getCurrentFile: () => "sample.py",
+			toggleMode: () => { toggled = true; },
+		};
+		assert.equal(checkCallback(true), true);
+		assert.equal(checkCallback(false), true);
+		assert.equal(toggled, true);
 	});
 });

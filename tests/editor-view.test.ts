@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import type MarimoBridgePlugin from "../src/main";
-import { createMarimoWebview } from "../src/editor-view";
-import { INJECTION_SCRIPT } from "../src/constants";
+import { createMarimoWebview, MarimoEditorView } from "../src/editor-view";
+import { INJECTION_SCRIPT, MODE_EDIT, MODE_RUN } from "../src/constants";
 
 const FORMER_OPEN_SENTINEL = "[MarimoBridge-Open] ";
 
@@ -1266,4 +1266,180 @@ test("forwards webview console messages at matching severities", () => {
 	assert.match(seen.debug[1] ?? "", /routine message/);
 	assert.match(seen.warn[0] ?? "", /warning message/);
 	assert.match(seen.error[0] ?? "", /error message/);
+});
+// ---------------------------------------------------------------------------
+// MarimoEditorView Mode Resolution & Lease Lifecycle (spec 032-notebook-tab-mode)
+// ---------------------------------------------------------------------------
+
+function makeMockViewHarness(defaultNotebookMode: "edit" | "run" = "edit") {
+	const calls = {
+		ensureEditServer: 0,
+		ensureRunServer: [] as string[],
+		releaseRunServer: [] as string[],
+		editFileUrl: [] as string[],
+		editHomeUrl: 0,
+	};
+	const plugin = {
+		settings: {
+			defaultNotebookMode,
+		},
+		servers: {
+			getActiveToken: () => "session-token",
+			ensureEditServer: async () => {
+				calls.ensureEditServer++;
+				return true;
+			},
+			ensureRunServer: async (file: string) => {
+				calls.ensureRunServer.push(file);
+				return `http://127.0.0.1:2719/?file=${file}`;
+			},
+			releaseRunServer: async (file: string) => {
+				calls.releaseRunServer.push(file);
+			},
+			editFileUrl: (file: string) => {
+				calls.editFileUrl.push(file);
+				return `http://127.0.0.1:2718/@file/${file}`;
+			},
+			editHomeUrl: () => {
+				calls.editHomeUrl++;
+				return "http://127.0.0.1:2718/";
+			},
+		},
+		openMarimo: async () => {},
+	};
+
+	let viewInstance: MarimoEditorView | null = null;
+	const leaf = {
+		viewState: {} as Record<string, unknown>,
+		async setViewState(state: Record<string, unknown>): Promise<void> {
+			this.viewState = state;
+			if (viewInstance && state.state) {
+				await viewInstance.setState(state.state, undefined);
+			}
+		},
+	};
+
+	viewInstance = new MarimoEditorView(
+		leaf as never,
+		plugin as unknown as MarimoBridgePlugin
+	);
+
+	// Mock contentEl with element-like container
+	const containerChildren: unknown[] = [];
+	const mockContentEl = {
+		addClass: () => {},
+		removeClass: () => {},
+		empty: () => { containerChildren.length = 0; },
+		createDiv: (opts?: { cls?: string; text?: string }) => {
+			const div = {
+				...opts,
+				remove: () => {},
+				createSpan: () => ({ remove: () => {} }),
+				createDiv: () => ({ remove: () => {} }),
+				setAttribute: () => {},
+			};
+			containerChildren.push(div);
+			return div;
+		},
+		contains: () => false,
+		querySelectorAll: () => [],
+		ownerDocument: {
+			createElement: () => {
+				const webview = new FakeWebview();
+				webview.isConnected = true;
+				return webview;
+			},
+		},
+		appendChild: (el: unknown) => { containerChildren.push(el); },
+	};
+	Object.defineProperty(viewInstance, "contentEl", {
+		value: mockContentEl,
+		writable: true,
+	});
+
+	return { view: viewInstance, leaf, calls, plugin };
+}
+
+test("resolves tab mode from settings and falls back to edit for Marimo Home (US1, FR-001..FR-004)", async () => {
+	// 1. With defaultNotebookMode = "edit"
+	const editHarness = makeMockViewHarness("edit");
+	await editHarness.view.setState({ file: "test.py" }, undefined);
+	assert.equal(editHarness.view.getCurrentMode(), MODE_EDIT);
+	assert.equal(editHarness.calls.ensureEditServer, 1);
+	assert.equal(editHarness.calls.ensureRunServer.length, 0);
+
+	// 2. With defaultNotebookMode = "run"
+	const runHarness = makeMockViewHarness("run");
+	await runHarness.view.setState({ file: "app.py" }, undefined);
+	assert.equal(runHarness.view.getCurrentMode(), MODE_RUN);
+	assert.equal(runHarness.calls.ensureRunServer.length, 1);
+	assert.equal(runHarness.calls.ensureRunServer[0], "app.py");
+	assert.equal(runHarness.calls.ensureEditServer, 0);
+
+	// 3. With defaultNotebookMode = "run" but file is undefined (Marimo Home)
+	const homeHarness = makeMockViewHarness("run");
+	await homeHarness.view.setState({}, undefined);
+	assert.equal(homeHarness.view.getCurrentMode(), MODE_EDIT);
+	assert.equal(homeHarness.calls.ensureEditServer, 1);
+	assert.equal(homeHarness.calls.ensureRunServer.length, 0);
+});
+
+test("toggles mode in-place and preserves explicit mode in view state (US2, FR-005..FR-007, FR-009)", async () => {
+	const harness = makeMockViewHarness("edit");
+	await harness.view.setState({ file: "toggle.py" }, undefined);
+	assert.equal(harness.view.getCurrentMode(), MODE_EDIT);
+	assert.deepEqual(harness.view.getState(), {
+		file: "toggle.py",
+		mode: MODE_EDIT,
+	});
+
+	// Toggle from edit to run
+	await harness.view.toggleMode();
+	assert.equal(harness.view.getCurrentMode(), MODE_RUN);
+	assert.deepEqual(harness.view.getState(), {
+		file: "toggle.py",
+		mode: MODE_RUN,
+	});
+	assert.equal(harness.calls.ensureRunServer.length, 1);
+	assert.equal(harness.calls.ensureRunServer[0], "toggle.py");
+
+	// Toggle from run back to edit
+	await harness.view.toggleMode();
+	assert.equal(harness.view.getCurrentMode(), MODE_EDIT);
+	assert.deepEqual(harness.view.getState(), {
+		file: "toggle.py",
+		mode: MODE_EDIT,
+	});
+});
+
+test("releases run server lease on mode switch, file change, and tab close (US3, FR-008, SC-003)", async () => {
+	const harness = makeMockViewHarness("run");
+	await harness.view.setState({ file: "book1.py" }, undefined);
+	assert.equal(harness.calls.ensureRunServer.length, 1);
+	assert.equal(harness.calls.releaseRunServer.length, 0);
+
+	// 1. Switch mode from run to edit -> releases book1.py
+	await harness.view.toggleMode();
+	assert.equal(harness.calls.releaseRunServer.length, 1);
+	assert.equal(harness.calls.releaseRunServer[0], "book1.py");
+
+	// 2. Switch mode back to run -> acquires book1.py again
+	await harness.view.toggleMode();
+	assert.equal(harness.calls.ensureRunServer.length, 2);
+
+	// 3. Navigate to book2.py while in run mode -> releases book1.py, acquires book2.py
+	await harness.view.setState({ file: "book2.py", mode: MODE_RUN }, undefined);
+	assert.equal(harness.calls.releaseRunServer.length, 2);
+	assert.equal(harness.calls.releaseRunServer[1], "book1.py");
+	assert.equal(harness.calls.ensureRunServer.length, 3);
+	assert.equal(harness.calls.ensureRunServer[2], "book2.py");
+
+	// 4. Close the tab -> releases book2.py
+	await harness.view.onClose();
+	assert.equal(harness.calls.releaseRunServer.length, 3);
+	assert.equal(harness.calls.releaseRunServer[2], "book2.py");
+
+	// 5. Subsequent close does not double-release
+	await harness.view.onClose();
+	assert.equal(harness.calls.releaseRunServer.length, 3);
 });

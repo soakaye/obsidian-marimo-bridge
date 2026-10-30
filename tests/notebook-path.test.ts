@@ -40,6 +40,7 @@ function settings(): MarimoBridgeSettings {
 		autoStart: false,
 		startupTimeout: 1,
 		takeOverPyExtension: true,
+		defaultNotebookMode: "edit",
 		defaultEmbedMode: "edit",
 		defaultEmbedHeight: 600,
 		showContextMenu: true,

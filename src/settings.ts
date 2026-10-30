@@ -20,6 +20,7 @@ import {
 	DEFAULT_AUTO_START,
 	DEFAULT_STARTUP_TIMEOUT,
 	DEFAULT_TAKE_OVER_PY_EXTENSION,
+	DEFAULT_NOTEBOOK_MODE,
 	DEFAULT_EMBED_MODE,
 	DEFAULT_EMBED_HEIGHT,
 	DEFAULT_SHOW_CONTEXT_MENU,
@@ -35,6 +36,7 @@ import {
 	SETTING_AUTO_START_NAME,
 	SETTING_TIMEOUT_NAME,
 	SETTING_TAKEOVER_NAME,
+	SETTING_NOTEBOOK_MODE_NAME,
 	SETTING_EMBED_MODE_NAME,
 	SETTING_EMBED_HEIGHT_NAME,
 	SETTING_CONTEXT_MENU_NAME,
@@ -60,6 +62,9 @@ import {
 	SETTING_PORT_DESC,
 	SETTING_AUTO_START_DESC,
 	SETTING_TAKEOVER_DESC,
+	SETTING_NOTEBOOK_MODE_DESC,
+	TEXT_NOTEBOOK_MODE_EDIT,
+	TEXT_NOTEBOOK_MODE_RUN,
 	SETTING_EMBED_MODE_DESC,
 	SETTING_CONTEXT_MENU_DESC,
 	SETTING_MD_CONTEXT_MENU_DESC,
@@ -79,6 +84,7 @@ import {
 	SETTINGS_KEY_AUTO_START,
 	SETTINGS_KEY_STARTUP_TIMEOUT,
 	SETTINGS_KEY_TAKEOVER_PY_EXTENSION,
+	SETTINGS_KEY_DEFAULT_NOTEBOOK_MODE,
 	SETTINGS_KEY_DEFAULT_EMBED_MODE,
 	SETTINGS_KEY_DEFAULT_EMBED_HEIGHT,
 	SETTINGS_KEY_SHOW_CONTEXT_MENU,
@@ -137,6 +143,8 @@ export interface MarimoBridgeSettings {
 	startupTimeout: number;
 	/** Open .py files in the marimo editor by default (registerExtensions). */
 	takeOverPyExtension: boolean;
+	/** Default mode for notebooks opened in tabs. */
+	defaultNotebookMode: "edit" | "run";
 	/** Default mode for ```marimo embeds when not specified. */
 	defaultEmbedMode: "edit" | "run";
 	/** Default height (px) for ```marimo embeds. */
@@ -157,6 +165,7 @@ export const DEFAULT_SETTINGS: MarimoBridgeSettings = {
 	autoStart: DEFAULT_AUTO_START,
 	startupTimeout: DEFAULT_STARTUP_TIMEOUT,
 	takeOverPyExtension: DEFAULT_TAKE_OVER_PY_EXTENSION,
+	defaultNotebookMode: DEFAULT_NOTEBOOK_MODE,
 	defaultEmbedMode: DEFAULT_EMBED_MODE,
 	defaultEmbedHeight: DEFAULT_EMBED_HEIGHT,
 	showContextMenu: DEFAULT_SHOW_CONTEXT_MENU,
@@ -283,6 +292,19 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 				control: {
 					type: CONTROL_TYPE_TOGGLE,
 					key: SETTINGS_KEY_TAKEOVER_PY_EXTENSION,
+				},
+			},
+			// 9. Default notebook mode
+			{
+				name: SETTING_NOTEBOOK_MODE_NAME,
+				desc: SETTING_NOTEBOOK_MODE_DESC,
+				control: {
+					type: CONTROL_TYPE_DROPDOWN,
+					key: SETTINGS_KEY_DEFAULT_NOTEBOOK_MODE,
+					options: {
+						[MODE_EDIT]: TEXT_NOTEBOOK_MODE_EDIT,
+						[MODE_RUN]: TEXT_NOTEBOOK_MODE_RUN,
+					},
 				},
 			},
 			// 9. Default embed mode
@@ -642,6 +664,22 @@ export class MarimoBridgeSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.takeOverPyExtension)
 					.onChange(async (value) => {
 						this.plugin.settings.takeOverPyExtension = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName(SETTING_NOTEBOOK_MODE_NAME)
+			.setDesc(SETTING_NOTEBOOK_MODE_DESC)
+			.addDropdown((d) =>
+				d
+					.addOption(MODE_EDIT, TEXT_NOTEBOOK_MODE_EDIT)
+					.addOption(MODE_RUN, TEXT_NOTEBOOK_MODE_RUN)
+					.setValue(this.plugin.settings.defaultNotebookMode)
+					.onChange(async (value) => {
+						this.plugin.settings.defaultNotebookMode = value as
+							| typeof MODE_EDIT
+							| typeof MODE_RUN;
 						await this.plugin.saveSettings();
 					})
 			);

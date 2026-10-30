@@ -10,6 +10,7 @@ export const DEFAULT_PORT = 2718;
 export const DEFAULT_AUTO_START = true;
 export const DEFAULT_STARTUP_TIMEOUT = 30;
 export const DEFAULT_TAKE_OVER_PY_EXTENSION = true;
+export const DEFAULT_NOTEBOOK_MODE = "edit" as const;
 export const DEFAULT_EMBED_MODE = "edit" as const;
 export const DEFAULT_EMBED_HEIGHT = 600;
 export const DEFAULT_SHOW_CONTEXT_MENU = true;
@@ -25,6 +26,10 @@ export const MAX_NOTEBOOK_NAME_ATTEMPTS = 1000;
 
 // Commands & Icons / Views
 export const ICON_MARIMO_LOGO = "marimo-logo";
+export const ICON_PLAY = "play";
+export const ICON_EDIT = "edit";
+export const ACTION_SWITCH_TO_RUN = "Switch to run mode";
+export const ACTION_SWITCH_TO_EDIT = "Switch to edit mode";
 export const VIEW_TYPE_MARIMO = "marimo-editor";
 
 // Paths & Environment
@@ -51,6 +56,7 @@ export const SETTING_PORT_NAME = "Port";
 export const SETTING_AUTO_START_NAME = "Auto-start server on load";
 export const SETTING_TIMEOUT_NAME = "Startup timeout (seconds)";
 export const SETTING_TAKEOVER_NAME = "Open .py files in marimo by default";
+export const SETTING_NOTEBOOK_MODE_NAME = "Default notebook mode";
 export const SETTING_EMBED_MODE_NAME = "Default embed mode";
 export const SETTING_EMBED_HEIGHT_NAME = "Default embed height (px)";
 export const SETTING_CONTEXT_MENU_NAME = "Enable file explorer context menu";
@@ -68,6 +74,8 @@ export const CMD_CREATE_NOTEBOOK_ID = "create-marimo-notebook";
 export const CMD_CREATE_NOTEBOOK_NAME = "Create new marimo notebook";
 export const CMD_RESTART_SERVER_ID = "restart-marimo-server";
 export const CMD_RESTART_SERVER_NAME = "Restart marimo server";
+export const CMD_TOGGLE_NOTEBOOK_MODE_ID = "toggle-notebook-mode";
+export const CMD_TOGGLE_NOTEBOOK_MODE_NAME = "Toggle notebook mode between edit and run";
 
 // Placeholders & Status Strings
 export const PLACEHOLDER_AUTO_DETECT = "(auto-detect)";
@@ -139,6 +147,9 @@ export const ATTR_SRC = "src";
 export const ATTR_INERT = "inert";
 export const ATTR_ROLE = "role";
 export const ATTR_ARIA_LIVE = "aria-live";
+export const ATTR_ARIA_LABEL = "aria-label";
+export const STYLE_DISPLAY_NONE = "none";
+export const STYLE_DISPLAY_EMPTY = "";
 export const ATTR_ARIA_HIDDEN = "aria-hidden";
 export const ARIA_ROLE_STATUS = "status";
 export const ARIA_LIVE_POLITE = "polite";
@@ -326,6 +337,9 @@ export const SETTING_UV_PATH_DESC = "Absolute path to uv. Leave empty to search 
 export const SETTING_PORT_DESC = "Port for the marimo edit server.";
 export const SETTING_AUTO_START_DESC = "Launch the marimo edit server when Obsidian starts.";
 export const SETTING_TAKEOVER_DESC = "When on, clicking a .py file opens the marimo editor. If another plugin already handles .py, it takes precedence and marimo Bridge skips this. Turn off to keep .py as plain text and use the command / context menu instead. Change takes effect after reloading the plugin.";
+export const SETTING_NOTEBOOK_MODE_DESC = "Mode used when opening notebooks in their own tab (edit for full editor, run for read-only app view).";
+export const TEXT_NOTEBOOK_MODE_EDIT = "Edit mode (full editor)";
+export const TEXT_NOTEBOOK_MODE_RUN = "Run mode (app view)";
 export const SETTING_EMBED_MODE_DESC = "Mode for ```marimo blocks when not specified.";
 export const SETTING_CONTEXT_MENU_DESC = "When enabled, right-clicking files and folders in the file explorer shows the 'create new marimo notebook' option.";
 export const SETTING_MD_CONTEXT_MENU_DESC = "When enabled, right-clicking a Markdown (.md) file in the file explorer shows an 'Open in marimo' option. Requires a marimo Markdown integration (e.g. mkdocs-marimo or quarto-marimo) installed in your marimo environment for the file to open as a notebook.";
@@ -344,6 +358,7 @@ export const SETTINGS_KEY_PORT = "port";
 export const SETTINGS_KEY_AUTO_START = "autoStart";
 export const SETTINGS_KEY_STARTUP_TIMEOUT = "startupTimeout";
 export const SETTINGS_KEY_TAKEOVER_PY_EXTENSION = "takeOverPyExtension";
+export const SETTINGS_KEY_DEFAULT_NOTEBOOK_MODE = "defaultNotebookMode";
 export const SETTINGS_KEY_DEFAULT_EMBED_MODE = "defaultEmbedMode";
 export const SETTINGS_KEY_DEFAULT_EMBED_HEIGHT = "defaultEmbedHeight";
 export const SETTINGS_KEY_SHOW_CONTEXT_MENU = "showContextMenu";

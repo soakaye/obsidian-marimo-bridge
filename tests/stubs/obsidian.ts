@@ -188,6 +188,8 @@ export class Setting {
 }
 
 export function addIcon(_id: string, _svg: string): void {}
+export function setIcon(_parent: HTMLElement, _iconId: string): void {}
+export function setTooltip(_el: HTMLElement, _tooltip: string): void {}
 
 export function normalizePath(value: string): string {
 	return value.replace(/\\/g, "/").replace(/\/+/g, "/");
@@ -201,6 +203,13 @@ export class ItemView {
 	constructor(leaf: unknown) {
 		this.leaf = leaf;
 		this.contentEl = {} as HTMLElement;
+	}
+
+	addAction(_icon: string, _title: string, _callback: () => void): HTMLElement {
+		return {
+			setAttribute: () => {},
+			style: {},
+		} as unknown as HTMLElement;
 	}
 
 	async setState(_state: unknown, _result: unknown): Promise<void> {}
