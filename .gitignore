@@ -24,6 +24,7 @@ data.json
 # Agent
 .agent
 .agent/
+.agents
 .agents/
 .claude/
 
