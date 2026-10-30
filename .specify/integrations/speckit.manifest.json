@@ -1,6 +1,6 @@
 {
   "integration": "speckit",
-  "version": "1.2.5",
+  "version": "1.2.3",
   "installed_at": "2026-06-18T02:20:49.887291+00:00",
   "files": {
     ".specify/scripts/powershell/check-prerequisites.ps1": "bcb37804b0757c37799b65a9321c1d3fb7b7ddcab6703c55c5b9a142c9166bf1",
@@ -25,6 +25,7 @@
     ".specify/scripts/python/setup_plan.py": "3738fbdc16a1418a12079c974208123c815866fc0401060e9c41a37d2c8e9eaa",
     ".specify/scripts/python/setup_tasks.py": "124a0a2ea5f213edf90c01b34d9f68d2609b20d1a1964c06106ed91ccb490ae1",
     ".specify/scripts/powershell/resolve-template.ps1": "e49c565a09902e4ebd4b5a51c4e014d5067fdee5b1592f15cb44ef31f430d745",
-    ".specify/.gitignore": "0a61c5378b0bb2e0f85babff99c8b166f2170a2c12378cd17d929aa19296ec88"
+    ".specify/.gitignore": "0a61c5378b0bb2e0f85babff99c8b166f2170a2c12378cd17d929aa19296ec88",
+    ".specify/scripts/bash/resolve-template.sh": "829e227096abc8bf0889889ec9f792f503ca5d395b7836a8a7eb739ee75214e7"
   }
 }

@@ -1,21 +1,18 @@
 <!--
 SYNC IMPACT REPORT:
-- Version change: 2.0.0 -> 3.0.0
+- Version change: 3.0.0 -> 4.0.0
 - List of modified principles:
-  - Redefined (backward incompatible): IV. Safe Local Bindings
-    — replaced "evict and replace any token-mismatched server" with
-      vault-scoped, record-based reuse and a non-evicting free-port fallback:
-      a server is reused only when positively confirmed to belong to THIS
-      vault, and a server that cannot be confirmed as ours is never terminated.
+  - Redefined: I. Language Division (言語区分)
+    — Replaced the strict requirement that all direct user communication, chat logs,
+      and assistant explanations must be written in Japanese with a flexible requirement
+      to use the natural language appropriate for the agent's operating environment
+      and user instructions/prompts.
 - Added sections: None
 - Removed sections: None
 - Templates requiring updates:
-  - .specify/templates/plan-template.md (✅ aligned, generic placeholders)
-  - .specify/templates/spec-template.md (✅ aligned, generic placeholders)
-  - .specify/templates/tasks-template.md (✅ aligned, generic placeholders)
+  - None
 - Downstream artifacts to refresh:
-  - specs/015-vault-scoped-server-adoption/* (feature that motivated this
-    amendment; implementation aligns — record-based adoption + port fallback)
+  - None
 - Follow-up TODOs: None
 -->
 # marimo Bridge for Obsidian Constitution
@@ -23,7 +20,7 @@ SYNC IMPACT REPORT:
 ## Core Principles
 
 ### I. Language Division (言語区分)
-All project artifacts, including specifications (`spec.md`), implementation plans (`plan.md`), task lists (`tasks.md`), codebase modifications, and Git commit messages/pull request titles, MUST be written in **English**. Conversely, all direct communication, chat logs, Q&A sessions, and assistant explanations to the user MUST be written in **Japanese**.
+All project artifacts, including specifications (`spec.md`), implementation plans (`plan.md`), task lists (`tasks.md`), codebase modifications, and Git commit messages/pull request titles, MUST be written in **English**. Direct communication, chat logs, Q&A sessions, and assistant explanations to the user MUST use the natural language appropriate for the agent's operating environment and user instructions or prompts (e.g., using Japanese in Japanese conversational contexts, while adapting naturally to English or other languages specified by the environment or prompt).
 
 ### II. Desktop-Only Architecture
 This plugin is built exclusively for Obsidian Desktop, depending on Node.js standard modules (like `child_process`) and Electron components (like `<webview>`). No mobile compatibility code or packages should be introduced unless these APIs are completely abstracted.
@@ -59,4 +56,4 @@ Version Bumps:
 - MINOR: Adding new principles or significant workflow changes.
 - PATCH: Clarifications, formatting, and typo fixes.
 
-**Version**: 3.0.0 | **Ratified**: 2026-06-18 | **Last Amended**: 2026-06-21
+**Version**: 4.0.0 | **Ratified**: 2026-06-18 | **Last Amended**: 2026-10-31

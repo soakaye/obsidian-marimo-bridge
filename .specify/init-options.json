@@ -6,5 +6,5 @@
   "here": true,
   "integration": "agy",
   "script": "py",
-  "speckit_version": "1.2.5"
+  "speckit_version": "1.2.3"
 }
