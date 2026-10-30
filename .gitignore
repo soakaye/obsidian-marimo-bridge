@@ -22,6 +22,7 @@ data.json
 .DS_Store
 
 # Agent
+.agent
 .agent/
 .agents/
 .claude/

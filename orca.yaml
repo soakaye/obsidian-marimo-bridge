@@ -1,0 +1,5 @@
+worktree:
+  sharedDirectories:
+    - .venv
+    - node_modules
+    - .agents    

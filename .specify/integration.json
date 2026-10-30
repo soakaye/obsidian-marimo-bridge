@@ -1,15 +1,15 @@
 {
-  "version": "0.11.3",
+  "version": "1.2.5",
   "integration_state_schema": 1,
   "installed_integrations": [
-    "codex"
+    "agy"
   ],
   "integration_settings": {
-    "codex": {
-      "script": "sh",
+    "agy": {
+      "script": "py",
       "invoke_separator": "-"
     }
   },
-  "integration": "codex",
-  "default_integration": "codex"
+  "integration": "agy",
+  "default_integration": "agy"
 }
