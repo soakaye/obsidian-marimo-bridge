@@ -2,3 +2,5 @@
 .env
 .env.local
 .vscode/settings.json
+.agents
+
